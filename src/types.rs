@@ -239,8 +239,10 @@ pub struct Kata {
 }
 
 pub struct CodewarsCLI {
-    pub mode: InputMode,
+    pub input_mode: InputMode,
     pub search_result: Vec<Kata>,
+    pub is_dropdown: bool,
+    pub help_mode: bool,
     // fields
     pub search_field: String,
     pub sortby_field: SortBy,

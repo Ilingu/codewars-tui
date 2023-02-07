@@ -1,18 +1,23 @@
 pub mod types;
+pub mod utils;
 
 use crossterm::{
     event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::{error::Error, io, str::FromStr};
+use std::{error::Error, vec};
 use tui::{
     backend::{Backend, CrosstermBackend},
-    layout::{Constraint, Direction, Layout},
-    widgets::{Block, BorderType, Borders, Widget},
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Span, Spans},
+    widgets::{Block, BorderType, Borders, Paragraph},
     Frame, Terminal,
 };
 use types::{CodewarsCLI, Difficulty, InputMode, Langage, SortBy, Tags};
+
+use crate::utils::gen_rand_colors;
 
 /* How it'll work
 - when opening it'll fetch from "https://www.codewars.com/kata/search" for the default kata
@@ -38,14 +43,20 @@ Esc:            Exit search mode
 impl CodewarsCLI {
     pub fn new() -> CodewarsCLI {
         CodewarsCLI {
-            mode: InputMode::Normal,
+            input_mode: InputMode::Normal,
             search_result: vec![],
+            is_dropdown: false,
+            help_mode: false,
             search_field: String::new(),
             sortby_field: SortBy::Newest,
             langage_field: Langage::All,
             difficulty_field: Difficulty::Empty,
             tag_field: Tags::Empty,
         }
+    }
+
+    pub fn change_state(&mut self, new_state: InputMode) {
+        self.input_mode = new_state;
     }
 }
 
@@ -80,18 +91,76 @@ fn run_app<B: Backend>(
         terminal.draw(|f| ui(f, state))?;
 
         if let Event::Key(key) = event::read()? {
-            match state.mode {
+            match state.input_mode {
                 InputMode::Normal => match key.code {
                     KeyCode::Char('q') => {
                         return Ok(());
                     }
+                    KeyCode::Char('s') => {
+                        state.change_state(InputMode::Search);
+                    }
                     _ => {}
                 },
-                InputMode::Search => todo!(),
-                InputMode::SortBy => todo!(),
-                InputMode::Langage => todo!(),
-                InputMode::Difficulty => todo!(),
-                InputMode::Tags => todo!(),
+
+                InputMode::Search => match key.code {
+                    KeyCode::Esc => {
+                        state.change_state(InputMode::Normal);
+                    }
+                    KeyCode::Tab => {
+                        state.change_state(InputMode::SortBy);
+                    }
+                    _ => {}
+                },
+
+                InputMode::SortBy => match key.code {
+                    KeyCode::Esc => {
+                        state.change_state(InputMode::Normal);
+                    }
+                    KeyCode::Tab => {
+                        state.change_state(InputMode::Langage);
+                    }
+                    KeyCode::BackTab => {
+                        state.change_state(InputMode::Search);
+                    }
+                    _ => {}
+                },
+
+                InputMode::Langage => match key.code {
+                    KeyCode::Esc => {
+                        state.change_state(InputMode::Normal);
+                    }
+                    KeyCode::Tab => {
+                        state.change_state(InputMode::Difficulty);
+                    }
+                    KeyCode::BackTab => {
+                        state.change_state(InputMode::SortBy);
+                    }
+                    _ => {}
+                },
+
+                InputMode::Difficulty => match key.code {
+                    KeyCode::Esc => {
+                        state.change_state(InputMode::Normal);
+                    }
+                    KeyCode::Tab => {
+                        state.change_state(InputMode::Tags);
+                    }
+                    KeyCode::BackTab => {
+                        state.change_state(InputMode::Langage);
+                    }
+                    _ => {}
+                },
+
+                InputMode::Tags => match key.code {
+                    KeyCode::Esc => {
+                        state.change_state(InputMode::Normal);
+                    }
+
+                    KeyCode::BackTab => {
+                        state.change_state(InputMode::Difficulty);
+                    }
+                    _ => {}
+                },
             }
         }
     }
@@ -103,17 +172,81 @@ fn ui<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI) {
         .constraints([Constraint::Percentage(30), Constraint::Percentage(70)].as_ref())
         .split(f.size());
 
-    let new_section_block = Block::default()
+    let search_section = Block::default()
         .title("Search Katas")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);
-    f.render_widget(new_section_block, parent_chunk[0]);
-    // new_section(f, state, parent_chunk[0]);
+    f.render_widget(search_section, parent_chunk[0]);
+    draw_search_section(f, state, parent_chunk[0]);
 
     let list_section_block = Block::default()
-        .title("List of kata")
+        .title("List of katas")
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);
     f.render_widget(list_section_block, parent_chunk[1]);
     // list_section(f, state, parent_chunk[1])
+}
+
+fn draw_welcome_text() -> Paragraph<'static> {
+    let colors = [gen_rand_colors(), gen_rand_colors(), gen_rand_colors()];
+
+    let text = vec![
+        Spans::from(vec![
+            Span::styled(
+                "Welcome",
+                Style::default().fg(colors[0]).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                "to",
+                Style::default().fg(colors[1]).add_modifier(Modifier::BOLD),
+            ),
+            Span::raw(" "),
+            Span::styled(
+                "CodewarsCLI",
+                Style::default().fg(colors[2]).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Spans::from("A tool to download katas locally"),
+        Spans::from(APP_KEYS_DESC),
+    ];
+
+    return Paragraph::new(text).alignment(Alignment::Center);
+}
+
+fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                Constraint::Length(2),
+                Constraint::Min(4),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Length(3),
+            ]
+            .as_ref(),
+        )
+        .split(area);
+
+    f.render_widget(draw_welcome_text(), chunks[0]);
+
+    let help = Paragraph::new(APP_KEYS_DESC);
+    f.render_widget(help, chunks[1]);
+
+    // let submit_btn = Paragraph::new("Submit")
+    //     .alignment(Alignment::Center)
+    //     .block(
+    //         Block::default()
+    //             .borders(Borders::ALL)
+    //             .border_type(BorderType::Rounded),
+    //     )
+    //     .style(match state.mode {
+    //         InputMode::Submit => Style::default().fg(Color::Yellow),
+    //         _ => Style::default(),
+    //     });
+    // f.render_widget(submit_btn, chunks[4]);
 }
