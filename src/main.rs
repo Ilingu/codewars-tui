@@ -15,7 +15,7 @@ use tui::{
     widgets::{Block, BorderType, Borders, Paragraph},
     Frame, Terminal,
 };
-use types::{CodewarsCLI, Difficulty, InputMode, Langage, SortBy, Tags};
+use types::{CodewarsCLI, InputMode, DIFFICULTY, LANGAGE, SORT_BY, TAGS};
 
 use crate::utils::gen_rand_colors;
 
@@ -48,10 +48,10 @@ impl CodewarsCLI {
             is_dropdown: false,
             help_mode: false,
             search_field: String::new(),
-            sortby_field: SortBy::Newest,
-            langage_field: Langage::All,
-            difficulty_field: Difficulty::Empty,
-            tag_field: Tags::Empty,
+            sortby_field: 0,
+            langage_field: 0,
+            difficulty_field: 0,
+            tag_field: 0,
         }
     }
 
@@ -103,6 +103,12 @@ fn run_app<B: Backend>(
                 },
 
                 InputMode::Search => match key.code {
+                    KeyCode::Char(c) => {
+                        state.search_field.push(c);
+                    }
+                    KeyCode::Backspace => {
+                        state.search_field.pop();
+                    }
                     KeyCode::Esc => {
                         state.change_state(InputMode::Normal);
                     }
@@ -237,16 +243,100 @@ fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
     let help = Paragraph::new(APP_KEYS_DESC);
     f.render_widget(help, chunks[1]);
 
-    // let submit_btn = Paragraph::new("Submit")
-    //     .alignment(Alignment::Center)
-    //     .block(
-    //         Block::default()
-    //             .borders(Borders::ALL)
-    //             .border_type(BorderType::Rounded),
-    //     )
-    //     .style(match state.mode {
-    //         InputMode::Submit => Style::default().fg(Color::Yellow),
-    //         _ => Style::default(),
-    //     });
-    // f.render_widget(submit_btn, chunks[4]);
+    let search = Paragraph::new(state.search_field.to_owned())
+        .alignment(Alignment::Left)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Search Kata"),
+        )
+        .style(match state.input_mode {
+            InputMode::Search => Style::default().fg(Color::LightYellow),
+            _ => Style::default(),
+        });
+    f.render_widget(search, chunks[2]);
+
+    let sortby = Paragraph::new(SORT_BY[state.sortby_field].to_owned())
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Sort By"),
+        )
+        .style(match state.input_mode {
+            InputMode::SortBy => Style::default().fg(Color::LightYellow),
+            _ => Style::default(),
+        });
+    f.render_widget(sortby, chunks[3]);
+
+    let language = Paragraph::new(if state.langage_field == 0 {
+        Span::styled(
+            LANGAGE[state.langage_field].to_owned(),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )
+    } else {
+        Span::from(LANGAGE[state.langage_field].to_owned())
+    })
+    .alignment(Alignment::Center)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("Language"),
+    )
+    .style(match state.input_mode {
+        InputMode::Langage => Style::default().fg(Color::LightYellow),
+        _ => Style::default(),
+    });
+    f.render_widget(language, chunks[4]);
+
+    let difficulty = Paragraph::new(if state.difficulty_field == 0 {
+        Span::styled(
+            DIFFICULTY[state.difficulty_field].to_owned(),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )
+    } else {
+        Span::from(DIFFICULTY[state.difficulty_field].to_owned())
+    })
+    .alignment(Alignment::Center)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("Difficulty"),
+    )
+    .style(match state.input_mode {
+        InputMode::Difficulty => Style::default().fg(Color::LightYellow),
+        _ => Style::default(),
+    });
+    f.render_widget(difficulty, chunks[5]);
+
+    let tags = Paragraph::new(if state.tag_field == 0 {
+        Span::styled(
+            TAGS[state.tag_field].to_owned(),
+            Style::default()
+                .fg(Color::DarkGray)
+                .add_modifier(Modifier::ITALIC),
+        )
+    } else {
+        Span::from(TAGS[state.tag_field].to_owned())
+    })
+    .alignment(Alignment::Center)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("Tags"),
+    )
+    .style(match state.input_mode {
+        InputMode::Tags => Style::default().fg(Color::LightYellow),
+        _ => Style::default(),
+    });
+    f.render_widget(tags, chunks[6]);
 }
