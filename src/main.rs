@@ -1,3 +1,4 @@
+pub mod custom_widgets;
 pub mod types;
 pub mod utils;
 
@@ -6,13 +7,14 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use custom_widgets::StatefulList;
 use std::{error::Error, vec};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, List, ListItem, ListState, Paragraph},
     Frame, Terminal,
 };
 use types::{CodewarsCLI, InputMode, DIFFICULTY, LANGAGE, SORT_BY, TAGS};
@@ -40,13 +42,12 @@ Shift+Tab:      Go to previous filed
 Esc:            Exit search mode
 "#;
 
-impl CodewarsCLI {
-    pub fn new() -> CodewarsCLI {
+impl CodewarsCLI<'_> {
+    pub fn new() -> CodewarsCLI<'static> {
         CodewarsCLI {
             input_mode: InputMode::Normal,
+            dropdown: (false, StatefulList::with_items(vec![], 0)),
             search_result: vec![],
-            is_dropdown: false,
-            help_mode: false,
             search_field: String::new(),
             sortby_field: 0,
             langage_field: 0,
@@ -57,6 +58,40 @@ impl CodewarsCLI {
 
     pub fn change_state(&mut self, new_state: InputMode) {
         self.input_mode = new_state;
+
+        // hide dropdown if necessary (normally impossible but never have faith in users)
+        match self.input_mode {
+            InputMode::Normal | InputMode::Search => self.hide_dropdown(),
+            _ => {}
+        };
+    }
+
+    pub fn show_dropdown(&mut self) {
+        let selected: usize = match self.input_mode {
+            InputMode::SortBy => self.sortby_field,
+            InputMode::Langage => self.langage_field,
+            InputMode::Difficulty => self.difficulty_field,
+            InputMode::Tags => self.tag_field,
+            _ => 0,
+        };
+
+        let datas = match self.input_mode {
+            InputMode::SortBy => Vec::from(SORT_BY),
+            InputMode::Langage => Vec::from(LANGAGE),
+            InputMode::Difficulty => Vec::from(DIFFICULTY),
+            InputMode::Tags => Vec::from(TAGS),
+            _ => vec![],
+        }
+        .iter()
+        .enumerate()
+        .map(|(i, d)| (*d, i))
+        .collect::<Vec<(&str, usize)>>();
+
+        self.dropdown = (true, StatefulList::with_items(datas, selected));
+    }
+
+    pub fn hide_dropdown(&mut self) {
+        self.dropdown = (false, StatefulList::with_items(vec![], 0))
     }
 }
 
@@ -91,82 +126,74 @@ fn run_app<B: Backend>(
         terminal.draw(|f| ui(f, state))?;
 
         if let Event::Key(key) = event::read()? {
-            match state.input_mode {
-                InputMode::Normal => match key.code {
-                    KeyCode::Char('q') => {
-                        return Ok(());
+            if state.dropdown.0 {
+                match key.code {
+                    KeyCode::Up => state.dropdown.1.previous(),
+                    KeyCode::Down => state.dropdown.1.next(),
+                    KeyCode::Enter => {
+                        match state.input_mode {
+                            InputMode::SortBy => state.sortby_field = state.dropdown.1.state,
+                            InputMode::Langage => state.langage_field = state.dropdown.1.state,
+                            InputMode::Difficulty => {
+                                state.difficulty_field = state.dropdown.1.state
+                            }
+                            InputMode::Tags => state.tag_field = state.dropdown.1.state,
+                            _ => {}
+                        };
+                        state.hide_dropdown();
                     }
-                    KeyCode::Char('s') => {
-                        state.change_state(InputMode::Search);
-                    }
+                    KeyCode::Esc => state.hide_dropdown(),
                     _ => {}
-                },
+                }
+            } else {
+                match state.input_mode {
+                    InputMode::Normal => match key.code {
+                        KeyCode::Char('q') => return Ok(()),
+                        KeyCode::Char('s') => state.change_state(InputMode::Search),
+                        _ => {}
+                    },
 
-                InputMode::Search => match key.code {
-                    KeyCode::Char(c) => {
-                        state.search_field.push(c);
-                    }
-                    KeyCode::Backspace => {
-                        state.search_field.pop();
-                    }
-                    KeyCode::Esc => {
-                        state.change_state(InputMode::Normal);
-                    }
-                    KeyCode::Tab => {
-                        state.change_state(InputMode::SortBy);
-                    }
-                    _ => {}
-                },
+                    InputMode::Search => match key.code {
+                        KeyCode::Char(c) => state.search_field.push(c),
+                        KeyCode::Backspace => {
+                            state.search_field.pop();
+                        }
+                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::SortBy),
+                        KeyCode::Esc => state.change_state(InputMode::Normal),
+                        _ => {}
+                    },
 
-                InputMode::SortBy => match key.code {
-                    KeyCode::Esc => {
-                        state.change_state(InputMode::Normal);
-                    }
-                    KeyCode::Tab => {
-                        state.change_state(InputMode::Langage);
-                    }
-                    KeyCode::BackTab => {
-                        state.change_state(InputMode::Search);
-                    }
-                    _ => {}
-                },
+                    InputMode::SortBy => match key.code {
+                        KeyCode::Enter => state.show_dropdown(),
+                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Langage),
+                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::Search),
+                        KeyCode::Esc => state.change_state(InputMode::Normal),
+                        _ => {}
+                    },
 
-                InputMode::Langage => match key.code {
-                    KeyCode::Esc => {
-                        state.change_state(InputMode::Normal);
-                    }
-                    KeyCode::Tab => {
-                        state.change_state(InputMode::Difficulty);
-                    }
-                    KeyCode::BackTab => {
-                        state.change_state(InputMode::SortBy);
-                    }
-                    _ => {}
-                },
+                    InputMode::Langage => match key.code {
+                        KeyCode::Enter => state.show_dropdown(),
+                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Difficulty),
+                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::SortBy),
+                        KeyCode::Esc => state.change_state(InputMode::Normal),
+                        _ => {}
+                    },
 
-                InputMode::Difficulty => match key.code {
-                    KeyCode::Esc => {
-                        state.change_state(InputMode::Normal);
-                    }
-                    KeyCode::Tab => {
-                        state.change_state(InputMode::Tags);
-                    }
-                    KeyCode::BackTab => {
-                        state.change_state(InputMode::Langage);
-                    }
-                    _ => {}
-                },
+                    InputMode::Difficulty => match key.code {
+                        KeyCode::Enter => state.show_dropdown(),
+                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Tags),
+                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::Langage),
+                        KeyCode::Esc => state.change_state(InputMode::Normal),
+                        _ => {}
+                    },
 
-                InputMode::Tags => match key.code {
-                    KeyCode::Esc => {
-                        state.change_state(InputMode::Normal);
-                    }
-
-                    KeyCode::BackTab => {
-                        state.change_state(InputMode::Difficulty);
-                    }
-                    _ => {}
-                },
+                    InputMode::Tags => match key.code {
+                        KeyCode::Enter => state.show_dropdown(),
+                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::Difficulty),
+                        KeyCode::Esc => state.change_state(InputMode::Normal),
+                        _ => {}
+                    },
+                }
             }
         }
     }
@@ -193,7 +220,7 @@ fn ui<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI) {
     // list_section(f, state, parent_chunk[1])
 }
 
-fn draw_welcome_text() -> Paragraph<'static> {
+fn welcome_text() -> Paragraph<'static> {
     let colors = [gen_rand_colors(), gen_rand_colors(), gen_rand_colors()];
 
     let text = vec![
@@ -220,25 +247,86 @@ fn draw_welcome_text() -> Paragraph<'static> {
     return Paragraph::new(text).alignment(Alignment::Center);
 }
 
+fn dropdown(state: &mut CodewarsCLI) -> List<'static> {
+    let title = match state.input_mode {
+        InputMode::SortBy => "Sort by",
+        InputMode::Langage => "Select Programming Languages",
+        InputMode::Difficulty => "Select Difficulty",
+        InputMode::Tags => "Select Tags",
+        _ => "",
+    };
+
+    let items = state
+        .dropdown
+        .1
+        .items
+        .iter()
+        .map(|(content, i)| {
+            let is_active = i == &state.dropdown.1.state;
+
+            ListItem::new(Spans::from(Span::styled(
+                if is_active {
+                    ">> ".to_string() + content
+                } else {
+                    content.to_string()
+                },
+                Style::default().add_modifier(Modifier::ITALIC),
+            )))
+            .style(if is_active {
+                Style::default()
+                    .fg(Color::Rgb(255, 195, 18))
+                    .add_modifier(Modifier::BOLD | Modifier::UNDERLINED)
+            } else {
+                Style::default()
+            })
+        })
+        .collect::<Vec<ListItem>>();
+
+    let items_in_view = 26 - 1;
+    let items_ranges = if state.dropdown.1.state > items_in_view {
+        (state.dropdown.1.state - items_in_view)..=state.dropdown.1.state
+    } else {
+        0..=items.len() - 1
+    };
+
+    return List::new(items[items_ranges].to_owned())
+        .block(Block::default().title(title).borders(Borders::ALL))
+        .style(Style::default().fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .bg(Color::LightGreen)
+                .add_modifier(Modifier::BOLD),
+        )
+        .highlight_symbol(">> ");
+}
+
 fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area: Rect) {
+    let contraints = if state.dropdown.0 {
+        vec![Constraint::Length(2), Constraint::Min(4)]
+    } else {
+        vec![
+            Constraint::Length(2),
+            Constraint::Min(4),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+            Constraint::Length(3),
+        ]
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
-        .constraints(
-            [
-                Constraint::Length(2),
-                Constraint::Min(4),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-                Constraint::Length(3),
-            ]
-            .as_ref(),
-        )
+        .constraints(contraints.as_ref())
         .split(area);
 
-    f.render_widget(draw_welcome_text(), chunks[0]);
+    f.render_widget(welcome_text(), chunks[0]);
+
+    if state.dropdown.0 {
+        f.render_widget(dropdown(state), chunks[1]);
+        return;
+    }
 
     let help = Paragraph::new(APP_KEYS_DESC);
     f.render_widget(help, chunks[1]);

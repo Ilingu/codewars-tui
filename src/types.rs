@@ -1,3 +1,5 @@
+use crate::custom_widgets::StatefulList;
+
 pub enum InputMode {
     Normal,
     Search,
@@ -224,11 +226,10 @@ pub struct Kata {
     pub created_at: String,
 }
 
-pub struct CodewarsCLI {
+pub struct CodewarsCLI<'a> {
     pub input_mode: InputMode,
     pub search_result: Vec<Kata>,
-    pub is_dropdown: bool,
-    pub help_mode: bool,
+    pub dropdown: (bool, StatefulList<(&'a str, usize)>),
     // fields
     pub search_field: String,
     pub sortby_field: usize,
