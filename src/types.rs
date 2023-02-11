@@ -9,7 +9,7 @@ pub enum InputMode {
     Tags,
 }
 
-// for endpoint: &r%5B%5D=-8&r%5B%5D=-6 (decoded: "&r[]=-8&r[]=-6", here for kyu 8 and 6) // thus it's just the "state.difficulty_field"+1
+// for endpoint: &r%5B%5D=-8&r%5B%5D=-6 (decoded: "&r[]=-8&r[]=-6", here for kyu 8 and 6) // thus it's just the "state.difficulty_field"
 pub const DIFFICULTY: [&str; 9] = [
     "Select Ranks", // do nothing
     "1 kyu",
@@ -227,10 +227,13 @@ pub struct Kata {
 }
 
 pub struct CodewarsCLI<'a> {
+    // client/framework state
+    pub terminal_size: (u16, u16),
+    // app state
     pub input_mode: InputMode,
     pub search_result: Vec<Kata>,
     pub dropdown: (bool, StatefulList<(&'a str, usize)>),
-    // fields
+    // fields state
     pub search_field: String,
     pub sortby_field: usize,
     pub langage_field: usize,

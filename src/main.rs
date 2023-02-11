@@ -3,12 +3,14 @@ pub mod types;
 pub mod utils;
 
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, MouseEventKind},
     execute,
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    terminal::{
+        disable_raw_mode, enable_raw_mode, size, EnterAlternateScreen, LeaveAlternateScreen,
+    },
 };
 use custom_widgets::StatefulList;
-use std::{error::Error, vec};
+use std::{error::Error, fmt::format, vec};
 use tui::{
     backend::{Backend, CrosstermBackend},
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -20,6 +22,7 @@ use tui::{
 use types::{CodewarsCLI, InputMode, DIFFICULTY, LANGAGE, SORT_BY, TAGS};
 
 use crate::utils::gen_rand_colors;
+use urlencoding::encode;
 
 /* How it'll work
 - when opening it'll fetch from "https://www.codewars.com/kata/search" for the default kata
@@ -42,10 +45,15 @@ Shift+Tab:      Go to previous filed
 Esc:            Exit search mode
 "#;
 
+const CODEWARS_ENDPOINT: &str = "https://www.codewars.com/kata/search";
+
+const TERMINAL_REF_SIZE: (u16, u16) = (147, 34);
+
 impl CodewarsCLI<'_> {
     pub fn new() -> CodewarsCLI<'static> {
         CodewarsCLI {
             input_mode: InputMode::Normal,
+            terminal_size: (0, 0),
             dropdown: (false, StatefulList::with_items(vec![], 0)),
             search_result: vec![],
             search_field: String::new(),
@@ -93,6 +101,62 @@ impl CodewarsCLI<'_> {
     pub fn hide_dropdown(&mut self) {
         self.dropdown = (false, StatefulList::with_items(vec![], 0))
     }
+
+    pub fn submit_search(&self) {
+        // query args
+        let query = format!("?q={}", encode(self.search_field.as_str()));
+
+        // sortby args
+        let sortby_value = match SORT_BY[self.sortby_field] {
+            "Oldest" => "published_at%20asc",
+            "Popularity" => "popularity%20desc",
+            "Positive Feedback" => "satisfaction_percent%20desc",
+            "Most Completed" => "total_completed%20desc",
+            "Least Completed" => "total_completed%20asc",
+            "Recently Published" => "published_at%20desc",
+            "Hardest" => "rank_id%20desc",
+            "Easiest" => "rank_id%20asc",
+            "Name" => "name%20asc",
+            "Low Satisfaction" => "satisfaction_percent%20asc",
+            _ => "",
+        }
+        .to_string();
+        let sortby = if sortby_value.len() <= 0 {
+            String::new()
+        } else {
+            format!("&order_by={sortby_value}")
+        };
+
+        // language path
+        let language = match LANGAGE[self.langage_field] {
+            "All" => String::new(),
+            "C++" => "cpp".to_string(),
+            "Objective-C" => "objc".to_string(),
+            "C#" => "csharp".to_string(),
+            "F#" => "fsharp".to_string(),
+            "λ Calculus" => "lambdacalc".to_string(),
+            "RISC-V" => "riscv".to_string(),
+            l => l.to_lowercase().trim().replace(" ", "-"),
+        };
+
+        // difficulty args
+        let difficulty = if self.difficulty_field == 0 {
+            String::new()
+        } else {
+            format!("&r%5B%5D=-{}", self.difficulty_field)
+        };
+
+        // tags args
+        let tags = if self.tag_field == 0 {
+            String::new()
+        } else {
+            format!("&tags={}", encode(TAGS[self.tag_field]))
+        };
+
+        // fetching
+        let url = format!("{CODEWARS_ENDPOINT}/{language}{query}{sortby}{difficulty}{tags}");
+        println!("{url}");
+    }
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -122,79 +186,136 @@ fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     state: &mut CodewarsCLI,
 ) -> Result<(), std::io::Error> {
+    state.terminal_size = size()?;
     loop {
         terminal.draw(|f| ui(f, state))?;
+        // println!("{:?}", state.terminal_size);
 
-        if let Event::Key(key) = event::read()? {
-            if state.dropdown.0 {
-                match key.code {
-                    KeyCode::Up => state.dropdown.1.previous(),
-                    KeyCode::Down => state.dropdown.1.next(),
-                    KeyCode::Enter => {
-                        match state.input_mode {
-                            InputMode::SortBy => state.sortby_field = state.dropdown.1.state,
-                            InputMode::Langage => state.langage_field = state.dropdown.1.state,
-                            InputMode::Difficulty => {
-                                state.difficulty_field = state.dropdown.1.state
-                            }
-                            InputMode::Tags => state.tag_field = state.dropdown.1.state,
-                            _ => {}
-                        };
-                        state.hide_dropdown();
-                    }
-                    KeyCode::Esc => state.hide_dropdown(),
-                    _ => {}
+        match event::read()? {
+            Event::Resize(w, h) => state.terminal_size = (w, h),
+            Event::Paste(data) => match state.input_mode {
+                InputMode::Search => {
+                    state.search_field.push_str(data.as_str());
                 }
-            } else {
-                match state.input_mode {
-                    InputMode::Normal => match key.code {
-                        KeyCode::Char('q') => return Ok(()),
-                        KeyCode::Char('s') => state.change_state(InputMode::Search),
-                        _ => {}
-                    },
+                _ => {}
+            },
+            Event::Mouse(mouse_ev) => {
+                if mouse_ev.kind == MouseEventKind::Down(event::MouseButton::Left) {
+                    let delta_gap = (
+                        (state.terminal_size.0 as f32 - TERMINAL_REF_SIZE.0 as f32) * 0.3, // *0.3 = -70% (because this section have 30% of all screen, see ui())
+                        state.terminal_size.1 as i16 - TERMINAL_REF_SIZE.1 as i16,
+                    );
 
-                    InputMode::Search => match key.code {
-                        KeyCode::Char(c) => state.search_field.push(c),
-                        KeyCode::Backspace => {
-                            state.search_field.pop();
+                    if mouse_ev.column as i16 >= 2 && mouse_ev.column as f32 <= delta_gap.0 + 42.0 {
+                        if mouse_ev.row as i16 >= delta_gap.1 + 16
+                            && mouse_ev.row as i16 <= delta_gap.1 + 19
+                        {
+                            state.change_state(InputMode::Search)
                         }
-                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::SortBy),
-                        KeyCode::Esc => state.change_state(InputMode::Normal),
-                        _ => {}
-                    },
-
-                    InputMode::SortBy => match key.code {
-                        KeyCode::Enter => state.show_dropdown(),
-                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Langage),
-                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::Search),
-                        KeyCode::Esc => state.change_state(InputMode::Normal),
-                        _ => {}
-                    },
-
-                    InputMode::Langage => match key.code {
-                        KeyCode::Enter => state.show_dropdown(),
-                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Difficulty),
-                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::SortBy),
-                        KeyCode::Esc => state.change_state(InputMode::Normal),
-                        _ => {}
-                    },
-
-                    InputMode::Difficulty => match key.code {
-                        KeyCode::Enter => state.show_dropdown(),
-                        KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Tags),
-                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::Langage),
-                        KeyCode::Esc => state.change_state(InputMode::Normal),
-                        _ => {}
-                    },
-
-                    InputMode::Tags => match key.code {
-                        KeyCode::Enter => state.show_dropdown(),
-                        KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::Difficulty),
-                        KeyCode::Esc => state.change_state(InputMode::Normal),
-                        _ => {}
-                    },
+                        if mouse_ev.row as i16 >= delta_gap.1 + 20
+                            && mouse_ev.row as i16 <= delta_gap.1 + 22
+                        {
+                            state.change_state(InputMode::SortBy)
+                        }
+                        if mouse_ev.row as i16 >= delta_gap.1 + 23
+                            && mouse_ev.row as i16 <= delta_gap.1 + 25
+                        {
+                            state.change_state(InputMode::Langage)
+                        }
+                        if mouse_ev.row as i16 >= delta_gap.1 + 26
+                            && mouse_ev.row as i16 <= delta_gap.1 + 28
+                        {
+                            state.change_state(InputMode::Difficulty)
+                        }
+                        if mouse_ev.row as i16 >= delta_gap.1 + 29
+                            && mouse_ev.row as i16 <= delta_gap.1 + 32
+                        {
+                            state.change_state(InputMode::Tags)
+                        }
+                    }
                 }
             }
+            Event::Key(key) => {
+                if state.dropdown.0 {
+                    match key.code {
+                        KeyCode::Up => state.dropdown.1.previous(),
+                        KeyCode::Down => state.dropdown.1.next(),
+                        KeyCode::Enter => {
+                            match state.input_mode {
+                                InputMode::SortBy => state.sortby_field = state.dropdown.1.state,
+                                InputMode::Langage => state.langage_field = state.dropdown.1.state,
+                                InputMode::Difficulty => {
+                                    state.difficulty_field = state.dropdown.1.state
+                                }
+                                InputMode::Tags => state.tag_field = state.dropdown.1.state,
+                                _ => {}
+                            };
+
+                            state.hide_dropdown();
+                            state.submit_search();
+                        }
+                        KeyCode::Esc => state.hide_dropdown(),
+                        _ => {}
+                    }
+                } else {
+                    match state.input_mode {
+                        InputMode::Normal => match key.code {
+                            KeyCode::Char('q') => return Ok(()),
+                            KeyCode::Char('s') => state.change_state(InputMode::Search),
+                            _ => {}
+                        },
+
+                        InputMode::Search => match key.code {
+                            KeyCode::Char(c) => state.search_field.push(c),
+                            KeyCode::Enter => state.submit_search(),
+                            KeyCode::Backspace => {
+                                state.search_field.pop();
+                            }
+                            KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::SortBy),
+                            KeyCode::Esc => state.change_state(InputMode::Normal),
+                            _ => {}
+                        },
+
+                        InputMode::SortBy => match key.code {
+                            KeyCode::Enter => state.show_dropdown(),
+                            KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Langage),
+                            KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::Search),
+                            KeyCode::Esc => state.change_state(InputMode::Normal),
+                            _ => {}
+                        },
+
+                        InputMode::Langage => match key.code {
+                            KeyCode::Enter => state.show_dropdown(),
+                            KeyCode::Tab | KeyCode::Down => {
+                                state.change_state(InputMode::Difficulty)
+                            }
+                            KeyCode::BackTab | KeyCode::Up => state.change_state(InputMode::SortBy),
+                            KeyCode::Esc => state.change_state(InputMode::Normal),
+                            _ => {}
+                        },
+
+                        InputMode::Difficulty => match key.code {
+                            KeyCode::Enter => state.show_dropdown(),
+                            KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::Tags),
+                            KeyCode::BackTab | KeyCode::Up => {
+                                state.change_state(InputMode::Langage)
+                            }
+                            KeyCode::Esc => state.change_state(InputMode::Normal),
+                            _ => {}
+                        },
+
+                        InputMode::Tags => match key.code {
+                            KeyCode::Enter => state.show_dropdown(),
+                            KeyCode::BackTab | KeyCode::Up => {
+                                state.change_state(InputMode::Difficulty)
+                            }
+                            KeyCode::Esc => state.change_state(InputMode::Normal),
+                            _ => {}
+                        },
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -282,7 +403,9 @@ fn dropdown(state: &mut CodewarsCLI) -> List<'static> {
         })
         .collect::<Vec<ListItem>>();
 
-    let items_in_view = 26 - 1;
+    const ITEMS_IN_VIEW_REF: u16 = 26; // for a terminal with 34 rows we can display 26 items of the list
+    let items_in_view =
+        (((ITEMS_IN_VIEW_REF * state.terminal_size.1) / TERMINAL_REF_SIZE.1) - 1) as usize;
     let items_ranges = if state.dropdown.1.state > items_in_view {
         (state.dropdown.1.state - items_in_view)..=state.dropdown.1.state
     } else {
