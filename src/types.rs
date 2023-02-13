@@ -1,4 +1,4 @@
-use crate::custom_widgets::StatefulList;
+use crate::utils::StatefulList;
 
 pub enum InputMode {
     Normal,
@@ -214,16 +214,54 @@ pub const TAGS: [&str; 109] = [
     "Web3",
 ];
 
+// Full katas implementation coming from API (for detailled view, if I have the will to program this non-essential part)
 pub struct Kata {
     pub id: String,
     pub name: String,
+    pub description: String,
     pub url: String,
+    pub languages: Vec<String>,
+    pub tags: Vec<String>,
     pub category: String,
     pub desc: String,
-    pub difficulty: String,
-    pub attempts: usize,
-    pub completed: usize,
+    pub rank: String,
+    pub author: String,
+    pub published_at: String,
+    pub total_attempts: usize,
+    pub total_completed: usize,
+    pub total_stars: usize,
     pub created_at: String,
+}
+
+// Minified katas from search result (https://www.codewars.com/kata/search)
+pub struct KataPreview {
+    pub id: String,
+    pub name: String,
+    pub url: String,
+    pub tags: Vec<String>,
+    pub languages: Vec<String>,
+    pub author: String,
+    pub total_completed: usize,
+    pub rank: String,
+    pub total_stars: usize,
+    pub satisfaction: String, // 0% to 100%
+}
+
+impl KataPreview {
+    pub fn default() -> Self {
+        Self {
+            id: String::new(),
+            name: String::new(),
+            url: String::new(),
+            tags: vec![],
+            languages: vec![],
+            author: String::new(),
+            total_completed: 0,
+            rank: String::new(),
+            satisfaction: String::new(),
+            total_stars: 0,
+        }
+    }
 }
 
 pub struct CodewarsCLI<'a> {
@@ -231,7 +269,7 @@ pub struct CodewarsCLI<'a> {
     pub terminal_size: (u16, u16),
     // app state
     pub input_mode: InputMode,
-    pub search_result: Vec<Kata>,
+    pub search_result: Vec<KataPreview>,
     pub dropdown: (bool, StatefulList<(&'a str, usize)>),
     // fields state
     pub search_field: String,
