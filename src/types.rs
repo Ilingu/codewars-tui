@@ -7,6 +7,7 @@ pub enum InputMode {
     Langage,
     Difficulty,
     Tags,
+    KataList,
 }
 
 // for endpoint: &r%5B%5D=-8&r%5B%5D=-6 (decoded: "&r[]=-8&r[]=-6", here for kyu 8 and 6) // thus it's just the "state.difficulty_field"
@@ -269,8 +270,8 @@ pub struct CodewarsCLI<'a> {
     pub terminal_size: (u16, u16),
     // app state
     pub input_mode: InputMode,
-    pub search_result: Vec<KataPreview>,
-    pub dropdown: (bool, StatefulList<(&'a str, usize)>),
+    pub search_result: StatefulList<KataPreview>,
+    pub field_dropdown: (bool, StatefulList<(&'a str, usize)>),
     // fields state
     pub search_field: String,
     pub sortby_field: usize,

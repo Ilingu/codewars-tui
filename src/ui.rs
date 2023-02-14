@@ -3,27 +3,27 @@ use tui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Span, Spans},
-    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph},
+    widgets::{Block, BorderType, Borders, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 
 use crate::{
-    types::{CodewarsCLI, InputMode, DIFFICULTY, LANGAGE, SORT_BY, TAGS},
+    types::{CodewarsCLI, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS},
     utils::gen_rand_colors,
     TERMINAL_REF_SIZE,
 };
 
 const APP_KEYS_DESC: &str = r#"
 - Actions (in normal mode):
-q:              Quit app
-S:              Search Kata
-D:              Download selected Kata
+q: Quit app
+S: Search Kata
+L: Focus List of Katas
+D: Download selected Kata
 
 - Moves:
-With mouse
-Tab:            Go to next field
-Shift+Tab:      Go to previous field
-Esc:            Exit to normal mode
+Tab:        Go to next field/kata
+Shift+Tab:  Go to previous field/kata
+Esc:        Exit to normal mode
 "#;
 
 pub fn ui<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI) {
@@ -33,18 +33,30 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI) {
         .split(f.size());
 
     let search_section = Block::default()
-        .title("Search Katas")
+        .title(Span::styled(
+            "Search Katas",
+            match state.input_mode {
+                InputMode::KataList => Style::default(),
+                _ => Style::default().fg(Color::Magenta),
+            },
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);
     f.render_widget(search_section, parent_chunk[0]);
     draw_search_section(f, state, parent_chunk[0]);
 
     let list_section_block = Block::default()
-        .title("List of katas")
+        .title(Span::styled(
+            "List of katas",
+            match state.input_mode {
+                InputMode::KataList => Style::default().fg(Color::Magenta),
+                _ => Style::default(),
+            },
+        ))
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded);
     f.render_widget(list_section_block, parent_chunk[1]);
-    // list_section(f, state, parent_chunk[1])
+    draw_list_section(f, state, parent_chunk[1])
 }
 
 fn welcome_text() -> Paragraph<'static> {
@@ -84,12 +96,12 @@ fn dropdown(state: &mut CodewarsCLI) -> List<'static> {
     };
 
     let items = state
-        .dropdown
+        .field_dropdown
         .1
         .items
         .iter()
         .map(|(content, i)| {
-            let is_active = i == &state.dropdown.1.state;
+            let is_active = i == &state.field_dropdown.1.state;
 
             ListItem::new(Spans::from(Span::styled(
                 if is_active {
@@ -112,8 +124,8 @@ fn dropdown(state: &mut CodewarsCLI) -> List<'static> {
     const ITEMS_IN_VIEW_REF: u16 = 26; // for a terminal with 34 rows we can display 26 items of the list
     let items_in_view =
         (((ITEMS_IN_VIEW_REF * state.terminal_size.1) / TERMINAL_REF_SIZE.1) - 1) as usize;
-    let items_ranges = if state.dropdown.1.state > items_in_view {
-        (state.dropdown.1.state - items_in_view)..=state.dropdown.1.state
+    let items_ranges = if state.field_dropdown.1.state > items_in_view {
+        (state.field_dropdown.1.state - items_in_view)..=state.field_dropdown.1.state
     } else {
         0..=items.len() - 1
     };
@@ -130,7 +142,7 @@ fn dropdown(state: &mut CodewarsCLI) -> List<'static> {
 }
 
 fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area: Rect) {
-    let contraints = if state.dropdown.0 {
+    let contraints = if state.field_dropdown.0 {
         vec![Constraint::Length(2), Constraint::Min(4)]
     } else {
         vec![
@@ -152,7 +164,7 @@ fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
 
     f.render_widget(welcome_text(), chunks[0]);
 
-    if state.dropdown.0 {
+    if state.field_dropdown.0 {
         f.render_widget(dropdown(state), chunks[1]);
         return;
     }
@@ -160,18 +172,29 @@ fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
     let help = Paragraph::new(APP_KEYS_DESC);
     f.render_widget(help, chunks[1]);
 
-    let search = Paragraph::new(state.search_field.to_owned())
-        .alignment(Alignment::Left)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title("Search Kata"),
-        )
-        .style(match state.input_mode {
-            InputMode::Search => Style::default().fg(Color::LightYellow),
-            _ => Style::default(),
-        });
+    let search = Paragraph::new(Spans::from(vec![
+        Span::raw(state.search_field.to_owned()),
+        match state.input_mode {
+            InputMode::Search => Span::styled(
+                "|",
+                Style::default()
+                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+                    .fg(Color::White),
+            ),
+            _ => Span::from(""),
+        },
+    ]))
+    .alignment(Alignment::Left)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("Search Kata"),
+    )
+    .style(match state.input_mode {
+        InputMode::Search => Style::default().fg(Color::LightYellow),
+        _ => Style::default(),
+    });
     f.render_widget(search, chunks[2]);
 
     let sortby = Paragraph::new(SORT_BY[state.sortby_field].to_owned())
@@ -256,4 +279,106 @@ fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
         _ => Style::default(),
     });
     f.render_widget(tags, chunks[6]);
+}
+
+fn draw_list_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area: Rect) {
+    if state.search_result.items.len() <= 0 {
+        return;
+    }
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+                Constraint::Percentage(10),
+            ]
+            .as_ref(),
+        )
+        .split(area);
+
+    const ITEMS_IN_VIEW_REF: u16 = 10; // for a terminal with 34 rows we can display 26 items of the list
+    let items_in_view =
+        (((ITEMS_IN_VIEW_REF * state.terminal_size.1) / TERMINAL_REF_SIZE.1) - 1) as usize;
+    let items_ranges = if state.search_result.state > items_in_view {
+        (state.search_result.state - items_in_view)..=state.search_result.state
+    } else {
+        0..=state.search_result.state
+    };
+
+    for (i, kata) in (&state.search_result.items[items_ranges])
+        .iter()
+        .enumerate()
+    {
+        let is_active = i == state.search_result.state;
+        f.render_widget(draw_kata(kata, is_active), chunks[i]);
+    }
+}
+
+fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
+    // const BG: tui::style::Color = Color::Rgb(89, 48, 66);
+    const FG_HEAD: tui::style::Color = Color::Rgb(104, 175, 49);
+
+    let text = vec![Spans::from(vec![
+        Span::raw("⭐ "),
+        Span::raw(kata.total_stars.to_string()),
+        Span::styled(
+            " | ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("😆 "),
+        Span::raw(kata.satisfaction.to_owned()),
+        Span::styled(
+            " | ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("✅ "),
+        Span::raw(kata.total_completed.to_string()),
+        Span::styled(
+            " | ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw("👤 "),
+        Span::raw(kata.author.to_owned()),
+        Span::styled(
+            " | ",
+            Style::default()
+                .fg(Color::White)
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])];
+
+    return Paragraph::new(text)
+        .block(
+            Block::default()
+                .title(Span::styled(
+                    kata.name.to_owned(),
+                    Style::default().add_modifier(Modifier::BOLD).fg(FG_HEAD),
+                ))
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(if is_active {
+                    Style::default().fg(Color::Yellow)
+                } else {
+                    Style::default()
+                }),
+        )
+        .style(Style::default().fg(Color::White))
+        .alignment(Alignment::Left)
+        .wrap(Wrap { trim: false });
 }

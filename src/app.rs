@@ -20,8 +20,8 @@ impl CodewarsCLI<'_> {
         CodewarsCLI {
             input_mode: InputMode::Normal,
             terminal_size: (0, 0),
-            dropdown: (false, StatefulList::with_items(vec![], 0)),
-            search_result: vec![],
+            field_dropdown: (false, StatefulList::with_items(vec![], 0)),
+            search_result: StatefulList::with_items(vec![], 0),
             search_field: String::new(),
             sortby_field: 0,
             langage_field: 0,
@@ -61,11 +61,11 @@ impl CodewarsCLI<'_> {
         .map(|(i, d)| (*d, i))
         .collect::<Vec<(&str, usize)>>();
 
-        self.dropdown = (true, StatefulList::with_items(datas, selected));
+        self.field_dropdown = (true, StatefulList::with_items(datas, selected));
     }
 
     pub fn hide_dropdown(&mut self) {
-        self.dropdown = (false, StatefulList::with_items(vec![], 0))
+        self.field_dropdown = (false, StatefulList::with_items(vec![], 0))
     }
 
     pub async fn submit_search(&mut self) {
@@ -76,18 +76,17 @@ impl CodewarsCLI<'_> {
             let document = Html::parse_document(html_doc.as_str());
 
             let kata_selector = Selector::parse("main .list-item-kata").unwrap();
-            let name_selector = Selector::parse("a").unwrap(); // only the first item
             let tags_selector = Selector::parse(".keyword-tag").unwrap();
-            let languages_selector = Selector::parse("div > div:nth-child(2) li > a").unwrap();
-            let author_selector = Selector::parse("div > div:nth-child(1) a:nth-child(5)").unwrap();
-            let total_completed_selector =
-                Selector::parse("div > div:nth-child(1) span:nth-child(4)").unwrap();
-            let rank_selector = Selector::parse("div > div:nth-child(1) span").unwrap(); // only the first item
-            let stars_selector =
-                Selector::parse("div > div:nth-child(1) span:nth-child(1) > a:nth-child(2)")
-                    .unwrap();
+            let languages_selector = Selector::parse("div div:nth-child(2) li a").unwrap();
+            let author_selector =
+                Selector::parse("a[data-tippy-content=\"This kata's Sensei\"]").unwrap();
+            let total_completed_selector = Selector::parse(
+                "span[data-tippy-content=\"Total times this kata has been completed\"]",
+            )
+            .unwrap();
+            let rank_selector = Selector::parse("div div:nth-child(1) span").unwrap(); // only the first item
             let satisfaction_selector =
-                Selector::parse("div > div:nth-child(1) span:nth-child(3)").unwrap();
+                Selector::parse("div > div > div.mt-1.mb-3.space-x-4 > span").unwrap();
 
             let mut katas: Vec<KataPreview> = vec![];
             for element in document.select(&kata_selector) {
@@ -95,10 +94,11 @@ impl CodewarsCLI<'_> {
 
                 kata.id = element.value().id().unwrap_or_default().to_string();
                 kata.url = format!("https://www.codewars.com/kata/{}", kata.id);
-                kata.name = match element.select(&name_selector).next() {
-                    Some(elem) => elem.text().to_string(),
-                    None => String::new(),
-                };
+                kata.name = element
+                    .value()
+                    .attr("data-title")
+                    .unwrap_or_default()
+                    .to_string();
 
                 for tag_elem in element.select(&tags_selector) {
                     kata.tags.push(tag_elem.text().to_string());
@@ -120,7 +120,12 @@ impl CodewarsCLI<'_> {
                 };
 
                 kata.total_completed = match element.select(&total_completed_selector).next() {
-                    Some(elem) => elem.text().to_string().parse::<usize>().unwrap_or_default(),
+                    Some(elem) => elem
+                        .text()
+                        .to_string()
+                        .replace(",", "")
+                        .parse::<usize>()
+                        .unwrap_or_default(),
                     None => 0,
                 };
 
@@ -129,8 +134,15 @@ impl CodewarsCLI<'_> {
                     None => String::new(),
                 };
 
-                kata.total_completed = match element.select(&stars_selector).next() {
-                    Some(elem) => elem.text().to_string().parse::<usize>().unwrap_or_default(),
+                let stars_selector =
+                    Selector::parse(&format!("span[data-rt='{}:total_stars']", kata.id)).unwrap();
+                kata.total_stars = match element.select(&stars_selector).next() {
+                    Some(elem) => elem
+                        .text()
+                        .to_string()
+                        .replace(",", "")
+                        .parse::<usize>()
+                        .unwrap_or_default(),
                     None => 0,
                 };
 
@@ -148,7 +160,7 @@ impl CodewarsCLI<'_> {
                 katas.push(kata);
             }
 
-            self.search_result = katas;
+            self.search_result = StatefulList::with_items(katas, 0);
         }
     }
 
@@ -260,18 +272,22 @@ pub async fn run_app<B: Backend>(
                 }
             }
             Event::Key(key) => {
-                if state.dropdown.0 {
+                if state.field_dropdown.0 {
                     match key.code {
-                        KeyCode::Up => state.dropdown.1.previous(),
-                        KeyCode::Down => state.dropdown.1.next(),
+                        KeyCode::Up => state.field_dropdown.1.previous(),
+                        KeyCode::Down => state.field_dropdown.1.next(),
                         KeyCode::Enter => {
                             match state.input_mode {
-                                InputMode::SortBy => state.sortby_field = state.dropdown.1.state,
-                                InputMode::Langage => state.langage_field = state.dropdown.1.state,
-                                InputMode::Difficulty => {
-                                    state.difficulty_field = state.dropdown.1.state
+                                InputMode::SortBy => {
+                                    state.sortby_field = state.field_dropdown.1.state
                                 }
-                                InputMode::Tags => state.tag_field = state.dropdown.1.state,
+                                InputMode::Langage => {
+                                    state.langage_field = state.field_dropdown.1.state
+                                }
+                                InputMode::Difficulty => {
+                                    state.difficulty_field = state.field_dropdown.1.state
+                                }
+                                InputMode::Tags => state.tag_field = state.field_dropdown.1.state,
                                 _ => {}
                             };
 
@@ -333,6 +349,21 @@ pub async fn run_app<B: Backend>(
                             KeyCode::Enter => state.show_dropdown(),
                             KeyCode::BackTab | KeyCode::Up => {
                                 state.change_state(InputMode::Difficulty)
+                            }
+                            KeyCode::Esc => state.change_state(InputMode::Normal),
+                            _ => {}
+                        },
+
+                        InputMode::KataList => match key.code {
+                            KeyCode::Tab | KeyCode::Down => {
+                                if state.search_result.items.len() > 0 {
+                                    state.search_result.next();
+                                }
+                            }
+                            KeyCode::BackTab | KeyCode::Up => {
+                                if state.search_result.items.len() > 0 {
+                                    state.search_result.previous();
+                                }
                             }
                             KeyCode::Esc => state.change_state(InputMode::Normal),
                             _ => {}
