@@ -9,7 +9,7 @@ use urlencoding::encode;
 use crate::{
     types::{CodewarsCLI, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS},
     ui::ui,
-    utils::{fetch_html, StatefulList, TextMethods},
+    utils::{fetch_html, open_url, StatefulList, TextMethods},
     TERMINAL_REF_SIZE,
 };
 
@@ -84,12 +84,10 @@ impl CodewarsCLI<'_> {
                 "span[data-tippy-content=\"Total times this kata has been completed\"]",
             )
             .unwrap();
-            let rank_selector = Selector::parse("div div:nth-child(1) span").unwrap(); // only the first item
-            let satisfaction_selector =
-                Selector::parse("div > div > div.mt-1.mb-3.space-x-4 > span").unwrap();
+            let rank_selector = Selector::parse("span").unwrap(); // only the first item
 
-            let mut katas: Vec<KataPreview> = vec![];
-            for element in document.select(&kata_selector) {
+            let mut katas: Vec<(KataPreview, usize)> = vec![];
+            for (i, element) in document.select(&kata_selector).enumerate() {
                 let mut kata = KataPreview::default();
 
                 kata.id = element.value().id().unwrap_or_default().to_string();
@@ -134,33 +132,11 @@ impl CodewarsCLI<'_> {
                     None => String::new(),
                 };
 
-                let stars_selector =
-                    Selector::parse(&format!("span[data-rt='{}:total_stars']", kata.id)).unwrap();
-                kata.total_stars = match element.select(&stars_selector).next() {
-                    Some(elem) => elem
-                        .text()
-                        .to_string()
-                        .replace(",", "")
-                        .parse::<usize>()
-                        .unwrap_or_default(),
-                    None => 0,
-                };
-
-                kata.satisfaction = match element.select(&satisfaction_selector).next() {
-                    Some(elem) => elem
-                        .text()
-                        .to_string()
-                        .split(" of ")
-                        .nth(0)
-                        .unwrap_or_default()
-                        .to_string(),
-                    None => String::new(),
-                };
-
-                katas.push(kata);
+                katas.push((kata, i));
             }
 
             self.search_result = StatefulList::with_items(katas, 0);
+            self.change_state(InputMode::KataList);
         }
     }
 
@@ -223,9 +199,16 @@ pub async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     state: &mut CodewarsCLI<'_>,
 ) -> Result<(), std::io::Error> {
+    let mut first_loop = true;
     state.terminal_size = size()?;
+
     loop {
         terminal.draw(|f| ui(f, state))?;
+
+        if first_loop {
+            state.submit_search().await;
+            first_loop = false
+        }
 
         match event::read()? {
             Event::Resize(w, h) => state.terminal_size = (w, h),
@@ -301,7 +284,10 @@ pub async fn run_app<B: Backend>(
                     match state.input_mode {
                         InputMode::Normal => match key.code {
                             KeyCode::Char('q') => return Ok(()),
-                            KeyCode::Char('S') => state.submit_search().await,
+                            KeyCode::Char('S') | KeyCode::Char('s') => state.submit_search().await,
+                            KeyCode::Char('L') | KeyCode::Char('l') => {
+                                state.change_state(InputMode::KataList)
+                            }
                             KeyCode::Tab => state.change_state(InputMode::Search),
                             _ => {}
                         },
@@ -364,6 +350,11 @@ pub async fn run_app<B: Backend>(
                                 if state.search_result.items.len() > 0 {
                                     state.search_result.previous();
                                 }
+                            }
+                            KeyCode::Enter => {
+                                if let Err(_) = open_url(
+                                    &state.search_result.items[state.search_result.state].0.url,
+                                ) {}
                             }
                             KeyCode::Esc => state.change_state(InputMode::Normal),
                             _ => {}

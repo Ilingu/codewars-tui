@@ -9,16 +9,16 @@ use tui::{
 
 use crate::{
     types::{CodewarsCLI, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS},
-    utils::gen_rand_colors,
+    utils::{gen_rand_colors, rank_color},
     TERMINAL_REF_SIZE,
 };
 
 const APP_KEYS_DESC: &str = r#"
-- Actions (in normal mode):
-q: Quit app
-S: Search Kata
-L: Focus List of Katas
-D: Download selected Kata
+- Actions:
+q: Quit app (normal mode)
+S: Search Kata (normal mode)
+L: Focus List of Katas (normal mode)
+D: Download selected Kata (list of kata)
 
 - Moves:
 Tab:        Go to next field/kata
@@ -37,11 +37,15 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI) {
             "Search Katas",
             match state.input_mode {
                 InputMode::KataList => Style::default(),
-                _ => Style::default().fg(Color::Magenta),
+                _ => Style::default().fg(Color::LightRed),
             },
         ))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+        .border_type(BorderType::Rounded)
+        .border_style(match state.input_mode {
+            InputMode::KataList => Style::default(),
+            _ => Style::default().fg(Color::LightRed),
+        });
     f.render_widget(search_section, parent_chunk[0]);
     draw_search_section(f, state, parent_chunk[0]);
 
@@ -49,12 +53,16 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI) {
         .title(Span::styled(
             "List of katas",
             match state.input_mode {
-                InputMode::KataList => Style::default().fg(Color::Magenta),
+                InputMode::KataList => Style::default().fg(Color::LightRed),
                 _ => Style::default(),
             },
         ))
         .borders(Borders::ALL)
-        .border_type(BorderType::Rounded);
+        .border_type(BorderType::Rounded)
+        .border_style(match state.input_mode {
+            InputMode::KataList => Style::default().fg(Color::LightRed),
+            _ => Style::default(),
+        });
     f.render_widget(list_section_block, parent_chunk[1]);
     draw_list_section(f, state, parent_chunk[1])
 }
@@ -291,35 +299,29 @@ fn draw_list_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area
         .margin(2)
         .constraints(
             [
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
-                Constraint::Percentage(10),
+                Constraint::Min(5),
+                Constraint::Min(5),
+                Constraint::Min(5),
+                Constraint::Min(5),
+                Constraint::Min(5),
+                Constraint::Min(5),
             ]
             .as_ref(),
         )
         .split(area);
 
-    const ITEMS_IN_VIEW_REF: u16 = 10; // for a terminal with 34 rows we can display 26 items of the list
-    let items_in_view =
-        (((ITEMS_IN_VIEW_REF * state.terminal_size.1) / TERMINAL_REF_SIZE.1) - 1) as usize;
-    let items_ranges = if state.search_result.state > items_in_view {
-        (state.search_result.state - items_in_view)..=state.search_result.state
+    const ITEMS_IN_VIEW_REF: usize = 6 - 1; // for a terminal with 34 rows we can display  items of the list
+    let items_ranges = if state.search_result.state > ITEMS_IN_VIEW_REF {
+        (state.search_result.state - ITEMS_IN_VIEW_REF)..=state.search_result.state
     } else {
-        0..=state.search_result.state
+        0..=ITEMS_IN_VIEW_REF
     };
 
-    for (i, kata) in (&state.search_result.items[items_ranges])
+    for (i, (kata, kata_idx)) in (&state.search_result.items[items_ranges])
         .iter()
         .enumerate()
     {
-        let is_active = i == state.search_result.state;
+        let is_active = *kata_idx == state.search_result.state;
         f.render_widget(draw_kata(kata, is_active), chunks[i]);
     }
 }
@@ -328,54 +330,73 @@ fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
     // const BG: tui::style::Color = Color::Rgb(89, 48, 66);
     const FG_HEAD: tui::style::Color = Color::Rgb(104, 175, 49);
 
-    let text = vec![Spans::from(vec![
-        Span::raw("⭐ "),
-        Span::raw(kata.total_stars.to_string()),
-        Span::styled(
-            " | ",
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("😆 "),
-        Span::raw(kata.satisfaction.to_owned()),
-        Span::styled(
-            " | ",
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("✅ "),
-        Span::raw(kata.total_completed.to_string()),
-        Span::styled(
-            " | ",
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw("👤 "),
-        Span::raw(kata.author.to_owned()),
-        Span::styled(
-            " | ",
-            Style::default()
-                .fg(Color::White)
-                .add_modifier(Modifier::BOLD),
-        ),
-    ])];
+    let mut tags: Vec<Span> = vec![Span::styled(
+        "Tags: ",
+        Style::default().fg(Color::LightCyan),
+    )];
+    for tag in kata.tags.to_owned() {
+        tags.push(Span::styled(tag, Style::default().bg(Color::DarkGray)));
+        tags.push(Span::raw(" "));
+    }
+
+    let mut languages: Vec<Span> = vec![Span::styled(
+        "Languages: ",
+        Style::default().fg(Color::LightCyan),
+    )];
+    for language in kata.languages.to_owned() {
+        languages.push(Span::styled(language, Style::default().bg(Color::DarkGray)));
+        languages.push(Span::raw(" "));
+    }
+
+    let text = vec![
+        Spans::from(vec![
+            Span::styled(
+                "Total Completed: ",
+                Style::default()
+                    .add_modifier(Modifier::ITALIC)
+                    .fg(Color::LightCyan),
+            ),
+            Span::raw(kata.total_completed.to_string()),
+            Span::styled(
+                " | ",
+                Style::default()
+                    .fg(Color::White)
+                    .add_modifier(Modifier::BOLD),
+            ),
+            Span::styled(
+                "Author: ",
+                Style::default()
+                    .add_modifier(Modifier::ITALIC)
+                    .fg(Color::LightCyan),
+            ),
+            Span::raw(kata.author.to_owned()),
+        ]),
+        Spans::from(tags),
+        Spans::from(languages),
+    ];
 
     return Paragraph::new(text)
         .block(
             Block::default()
-                .title(Span::styled(
-                    kata.name.to_owned(),
-                    Style::default().add_modifier(Modifier::BOLD).fg(FG_HEAD),
-                ))
+                .title(Spans::from(vec![
+                    Span::styled(
+                        kata.name.to_owned(),
+                        Style::default().add_modifier(Modifier::BOLD).fg(FG_HEAD),
+                    ),
+                    Span::raw(" - "),
+                    Span::styled(
+                        kata.rank.to_owned(),
+                        Style::default()
+                            .add_modifier(Modifier::BOLD)
+                            .fg(rank_color(kata.rank.as_str(), Color::White)),
+                    ),
+                ]))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(if is_active {
-                    Style::default().fg(Color::Yellow)
+                    Style::default().fg(rank_color(kata.rank.as_str(), Color::LightGreen))
                 } else {
-                    Style::default()
+                    Style::default().fg(Color::DarkGray)
                 }),
         )
         .style(Style::default().fg(Color::White))

@@ -1,4 +1,4 @@
-use std::error::Error;
+use std::{error::Error, process::Command};
 
 use reqwest::Url;
 use scraper::element_ref::Text;
@@ -18,6 +18,29 @@ pub fn gen_rand_colors() -> Color {
         rand_int(0, 255) as u8,
         rand_int(0, 255) as u8,
     )
+}
+
+pub fn rank_color(rank: &str, default: Color) -> Color {
+    match rank {
+        "1 kyu" | "2 kyu" => Color::Rgb(134, 108, 199),
+        "3 kyu" | "4 kyu" => Color::Rgb(60, 126, 187),
+        "5 kyu" | "6 kyu" => Color::Rgb(236, 182, 19),
+        "8 kyu" | "7 kyu" => Color::Rgb(230, 230, 230),
+        _ => default,
+    }
+}
+
+pub fn open_url(url: &str) -> Result<(), String> {
+    let cmd_res = if cfg!(target_os = "windows") {
+        Command::new("start").arg(url).output()
+    } else {
+        Command::new("xdg-open").arg(url).output()
+    };
+
+    return match cmd_res {
+        Ok(_) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    };
 }
 
 fn is_valid_url(s: &str) -> bool {

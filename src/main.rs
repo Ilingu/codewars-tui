@@ -18,7 +18,7 @@ use types::CodewarsCLI;
 - parser for html to struct
 - UI: on the left some settings for the search (search, sort by, langage, status, progress...) on update re fetch the kata
 - rendering all the kata as a list on the right (90% of the screen)
-- when user clicks on a kata in the list, close the setting panel and open a detailled view of the kata with a [download] button at the end
+- when user clicks on a kata in the list, ---close the setting panel and open a detailled view of the kata with a [download] button at the end--- no in fact it'll just open it in browser with xdg-open cmd
 - when user clicks on the [download] button, fetch the kata instruction, sample tests, and sample solution at (https://www.codewars.com/kata/<kata-id>/train/<langage>) and then dwonload it to the user specified folder                                                                                                                  //
  */
 

@@ -244,8 +244,6 @@ pub struct KataPreview {
     pub author: String,
     pub total_completed: usize,
     pub rank: String,
-    pub total_stars: usize,
-    pub satisfaction: String, // 0% to 100%
 }
 
 impl KataPreview {
@@ -259,8 +257,6 @@ impl KataPreview {
             author: String::new(),
             total_completed: 0,
             rank: String::new(),
-            satisfaction: String::new(),
-            total_stars: 0,
         }
     }
 }
@@ -270,7 +266,7 @@ pub struct CodewarsCLI<'a> {
     pub terminal_size: (u16, u16),
     // app state
     pub input_mode: InputMode,
-    pub search_result: StatefulList<KataPreview>,
+    pub search_result: StatefulList<(KataPreview, usize)>,
     pub field_dropdown: (bool, StatefulList<(&'a str, usize)>),
     // fields state
     pub search_field: String,
