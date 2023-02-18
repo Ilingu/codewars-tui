@@ -8,8 +8,10 @@ use tui::{
 };
 
 use crate::{
-    types::{CodewarsCLI, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS},
-    utils::{gen_rand_colors, rank_color},
+    types::{
+        CodewarsCLI, DownloadModalInput, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS,
+    },
+    utils::{gen_rand_colors, rank_color, StatefulList},
     TERMINAL_REF_SIZE,
 };
 
@@ -64,7 +66,11 @@ pub fn ui<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI) {
             _ => Style::default(),
         });
     f.render_widget(list_section_block, parent_chunk[1]);
-    draw_list_section(f, state, parent_chunk[1])
+    if state.download_modal.0 != DownloadModalInput::Disabled {
+        draw_download_modal(f, state, parent_chunk[1])
+    } else {
+        draw_list_section(f, state, parent_chunk[1])
+    }
 }
 
 fn welcome_text() -> Paragraph<'static> {
@@ -94,22 +100,25 @@ fn welcome_text() -> Paragraph<'static> {
     return Paragraph::new(text).alignment(Alignment::Center);
 }
 
-fn dropdown(state: &mut CodewarsCLI) -> List<'static> {
-    let title = match state.input_mode {
+fn dropdown(
+    dropdown_info: &StatefulList<(String, usize)>,
+    input_mode: &InputMode,
+    terminal_size: &(u16, u16),
+    items_in_views: Option<u16>,
+) -> List<'static> {
+    let title = match input_mode {
         InputMode::SortBy => "Sort by",
-        InputMode::Langage => "Select Programming Languages",
+        InputMode::Langage => "Select Programming Language",
         InputMode::Difficulty => "Select Difficulty",
         InputMode::Tags => "Select Tags",
         _ => "",
     };
 
-    let items = state
-        .field_dropdown
-        .1
+    let items = dropdown_info
         .items
         .iter()
         .map(|(content, i)| {
-            let is_active = i == &state.field_dropdown.1.state;
+            let is_active = i == &dropdown_info.state;
 
             ListItem::new(Spans::from(Span::styled(
                 if is_active {
@@ -129,11 +138,14 @@ fn dropdown(state: &mut CodewarsCLI) -> List<'static> {
         })
         .collect::<Vec<ListItem>>();
 
-    const ITEMS_IN_VIEW_REF: u16 = 26; // for a terminal with 34 rows we can display 26 items of the list
+    let wanted_item_in_view: u16 = match items_in_views {
+        Some(iivr) => iivr,
+        None => 26,
+    }; // for a terminal with 34 rows we can display 26 items of the list
     let items_in_view =
-        (((ITEMS_IN_VIEW_REF * state.terminal_size.1) / TERMINAL_REF_SIZE.1) - 1) as usize;
-    let items_ranges = if state.field_dropdown.1.state > items_in_view {
-        (state.field_dropdown.1.state - items_in_view)..=state.field_dropdown.1.state
+        (((wanted_item_in_view * terminal_size.1) / TERMINAL_REF_SIZE.1) - 1) as usize;
+    let items_ranges = if dropdown_info.state > items_in_view {
+        (dropdown_info.state - items_in_view)..=dropdown_info.state
     } else {
         0..=items.len() - 1
     };
@@ -173,7 +185,15 @@ fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
     f.render_widget(welcome_text(), chunks[0]);
 
     if state.field_dropdown.0 {
-        f.render_widget(dropdown(state), chunks[1]);
+        f.render_widget(
+            dropdown(
+                &state.field_dropdown.1,
+                &state.input_mode,
+                &state.terminal_size,
+                None,
+            ),
+            chunks[1],
+        );
         return;
     }
 
@@ -402,4 +422,92 @@ fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
         .style(Style::default().fg(Color::White))
         .alignment(Alignment::Left)
         .wrap(Wrap { trim: false });
+}
+
+fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area: Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .margin(2)
+        .constraints(
+            [
+                if state.download_langage.0 {
+                    Constraint::Percentage(80)
+                } else {
+                    Constraint::Length(3)
+                },
+                Constraint::Length(3),
+                Constraint::Length(3),
+                Constraint::Min(0),
+            ]
+            .as_ref(),
+        )
+        .split(area);
+
+    if state.download_langage.0 {
+        f.render_widget(
+            dropdown(
+                &state.download_langage.1,
+                &InputMode::Langage,
+                &state.terminal_size,
+                Some(22),
+            ),
+            chunks[0],
+        );
+    } else {
+        let language = Paragraph::new(
+            state.download_langage.1.items[state.download_langage.1.state]
+                .0
+                .to_owned(),
+        )
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Kata Langage"),
+        )
+        .style(match state.download_modal.0 {
+            DownloadModalInput::Langage => Style::default().fg(Color::LightYellow),
+            _ => Style::default(),
+        });
+        f.render_widget(language, chunks[0]);
+    }
+
+    let path = Paragraph::new(Spans::from(vec![
+        Span::raw(state.download_path.to_owned()),
+        match state.download_modal.0 {
+            DownloadModalInput::Path => Span::styled(
+                "|",
+                Style::default()
+                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+                    .fg(Color::White),
+            ),
+            _ => Span::from(""),
+        },
+    ]))
+    .alignment(Alignment::Left)
+    .block(
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .title("Download Path"),
+    )
+    .style(match state.download_modal.0 {
+        DownloadModalInput::Path => Style::default().fg(Color::LightYellow),
+        _ => Style::default(),
+    });
+    f.render_widget(path, chunks[1]);
+
+    let submit = Paragraph::new("Download ✅")
+        .alignment(Alignment::Center)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded),
+        )
+        .style(match state.download_modal.0 {
+            DownloadModalInput::Submit => Style::default().fg(Color::LightGreen),
+            _ => Style::default(),
+        });
+    f.render_widget(submit, chunks[2]);
 }

@@ -1,10 +1,14 @@
-use std::{error::Error, process::Command};
+use std::{collections::HashMap, error::Error, process::Command};
+
+use headless_chrome::Browser;
 
 use reqwest::Url;
 use scraper::element_ref::Text;
 use tui::style::Color;
 
 use rand::Rng;
+
+use crate::types::KataAPI;
 
 /// generate a random integer between a and b included
 pub fn rand_int(a: isize, b: isize) -> isize {
@@ -97,4 +101,44 @@ impl<T> StatefulList<T> {
             self.state -= 1;
         }
     }
+}
+
+// Fetch codewars sample code & instruction for puzzles
+pub async fn fetch_codewars_download_info(
+    kata_id: &str,
+    langage: Option<&str>,
+) -> Result<(String, Vec<String>), Box<dyn Error>> {
+    // get instruction
+    let resp = reqwest::get(format!(
+        "https://www.codewars.com/api/v1/code-challenges/{}",
+        kata_id
+    ))
+    .await?
+    .json::<KataAPI>()
+    .await?;
+
+    let instruction = resp.description; // instruction in markdown
+
+    // get sample code
+    let browser = Browser::default()?;
+    let tab = browser.new_tab()?;
+    tab.navigate_to(&format!(
+        "https://www.codewars.com/kata/{}/train{}",
+        kata_id,
+        match langage {
+            Some(l) => "/".to_string() + l,
+            None => String::new(),
+        }
+    ))?;
+
+    let solution_field_elems = tab.wait_for_elements("#code > div.text-editor.js-editor.has-shadow > div.CodeMirror.cm-s-codewars > div.CodeMirror-scroll > div.CodeMirror-sizer > div > div > div > div.CodeMirror-code > div > pre");
+    let solution_field_lines = match solution_field_elems {
+        Ok(lines) => lines
+            .iter()
+            .map(|line| line.get_inner_text().unwrap_or_default())
+            .collect::<Vec<String>>(),
+        Err(_) => return Err("failed to get solution boilerplate".into()),
+    };
+
+    Ok((instruction, solution_field_lines))
 }

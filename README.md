@@ -9,6 +9,7 @@ useful Links:
 - [Codewars API](https://dev.codewars.com/#users-api)
 - [Codewars Seach Page](https://www.codewars.com/kata/search)
 - [tui-rs](https://github.com/fdehau/tui-rs)
+- [rust automated browser - thirtyfour](https://github.com/stevepryde/thirtyfour)
 
 #### Lear tui-rs
 

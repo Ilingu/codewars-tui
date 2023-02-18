@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 use crate::utils::StatefulList;
 
 pub enum InputMode {
@@ -8,6 +10,14 @@ pub enum InputMode {
     Difficulty,
     Tags,
     KataList,
+}
+
+#[derive(PartialEq)]
+pub enum DownloadModalInput {
+    Disabled,
+    Langage,
+    Path,
+    Submit,
 }
 
 // for endpoint: &r%5B%5D=-8&r%5B%5D=-6 (decoded: "&r[]=-8&r[]=-6", here for kyu 8 and 6) // thus it's just the "state.difficulty_field"
@@ -246,32 +256,33 @@ pub struct KataPreview {
     pub rank: String,
 }
 
-impl KataPreview {
-    pub fn default() -> Self {
-        Self {
-            id: String::new(),
-            name: String::new(),
-            url: String::new(),
-            tags: vec![],
-            languages: vec![],
-            author: String::new(),
-            total_completed: 0,
-            rank: String::new(),
-        }
-    }
-}
-
-pub struct CodewarsCLI<'a> {
+pub struct CodewarsCLI {
     // client/framework state
     pub terminal_size: (u16, u16),
     // app state
     pub input_mode: InputMode,
     pub search_result: StatefulList<(KataPreview, usize)>,
-    pub field_dropdown: (bool, StatefulList<(&'a str, usize)>),
+    pub field_dropdown: (bool, StatefulList<(String, usize)>),
+    pub download_modal: (DownloadModalInput, usize),
+    pub download_path: String,
+    pub download_langage: (bool, StatefulList<(String, usize)>),
     // fields state
     pub search_field: String,
     pub sortby_field: usize,
     pub langage_field: usize,
     pub difficulty_field: usize,
     pub tag_field: usize,
+}
+
+#[derive(Deserialize)]
+pub struct KataAPI {
+    pub id: String,          // ID of the kata.
+    pub name: String,        // Name of the kata.
+    pub slug: String,        // Slug of the kata.
+    pub url: String,         // URL of the kata.
+    pub category: String,    // Category of the kata.
+    pub description: String, // Description of the kata in Markdown.
+    pub tags: Vec<String>,   // Array of tags associated with the kata.
+    pub languages: Vec<String>, // Array of language names the kata is available in.
+                             // this struct is imcomplete, see https://dev.codewars.com/#get-code-challenge
 }
