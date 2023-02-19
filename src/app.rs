@@ -1,3 +1,5 @@
+use std::fs;
+
 use crossterm::{
     event::{self, Event, KeyCode, MouseEventKind},
     terminal::size,
@@ -11,8 +13,11 @@ use crate::{
     types::{
         CodewarsCLI, DownloadModalInput, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS,
     },
-    ui::ui,
-    utils::{fetch_codewars_download_info, fetch_html, open_url, StatefulList, TextMethods},
+    ui::{ui, StatefulList},
+    utils::{
+        fetch_codewars_download_info, fetch_html, language_to_extension, open_url, write_file,
+        TextMethods,
+    },
     TERMINAL_REF_SIZE,
 };
 
@@ -215,17 +220,39 @@ impl KataPreview {
         }
     }
 
-    pub async fn download(&self, which_language: &str, download_path: &str) -> Result<(), String> {
-        let (instruction, sample_code_lines) =
-            match fetch_codewars_download_info(self.id.as_str(), Some(which_language)).await {
+    pub async fn download(&self, language: &str, mut udownload_path: &str) -> Result<(), String> {
+        let (instruction, sample_code_lines, sample_tests_lines) =
+            match fetch_codewars_download_info(self.id.as_str(), Some(language)).await {
                 Ok(data) => data,
                 Err(err) => {
-                    println!("{}", err.to_string());
                     return Err(err.to_string());
                 }
             };
-        println!("{instruction}");
-        println!("{:?}", sample_code_lines);
+
+        udownload_path = udownload_path.trim_end_matches("/");
+        let download_path = format!(
+            "{udownload_path}/{}",
+            self.name.to_lowercase().trim().replace(" ", "-")
+        );
+
+        if let Err(why) = fs::create_dir_all(&download_path) {
+            return Err(why.to_string());
+        }
+
+        let language_ext = language_to_extension(language).unwrap_or_default();
+        let code_filename = format!("{download_path}/solution{}", language_ext);
+        let tests_filename = format!("{download_path}/tests{}", language_ext);
+        let instruction_filename = format!("{download_path}/instruction.md");
+
+        if let Err(why) = write_file(code_filename, sample_code_lines.join("\n")) {
+            return Err(why.to_string());
+        }
+        if let Err(why) = write_file(instruction_filename, instruction) {
+            return Err(why.to_string());
+        }
+        if let Err(why) = write_file(tests_filename, sample_tests_lines.join("\n")) {
+            return Err(why.to_string());
+        }
         Ok(())
     }
 }
@@ -247,12 +274,20 @@ pub async fn run_app<B: Backend>(
 
         match event::read()? {
             Event::Resize(w, h) => state.terminal_size = (w, h),
-            Event::Paste(data) => match state.input_mode {
-                InputMode::Search => {
-                    state.search_field.push_str(data.as_str());
+            Event::Paste(data) => {
+                match state.download_modal.0 {
+                    DownloadModalInput::Path => {
+                        state.download_path.push_str(data.as_str());
+                    }
+                    _ => {}
                 }
-                _ => {}
-            },
+                match state.input_mode {
+                    InputMode::Search => {
+                        state.search_field.push_str(data.as_str());
+                    }
+                    _ => {}
+                };
+            }
             Event::Mouse(mouse_ev) => {
                 if mouse_ev.kind == MouseEventKind::Down(event::MouseButton::Left) {
                     let delta_gap = (

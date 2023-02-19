@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::utils::StatefulList;
+use crate::ui::StatefulList;
 
 pub enum InputMode {
     Normal,

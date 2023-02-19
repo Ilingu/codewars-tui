@@ -1,4 +1,5 @@
-use std::{collections::HashMap, error::Error, process::Command};
+use std::io::prelude::*;
+use std::{error::Error, fs::File, path::Path, process::Command};
 
 use headless_chrome::Browser;
 
@@ -72,34 +73,21 @@ impl TextMethods for ScrapperText<'_> {
     }
 }
 
-// Custom widgets
-pub struct StatefulList<T> {
-    pub state: usize,
-    pub items: Vec<T>,
-}
+// IO
+pub fn write_file(path_str: String, value: String) -> Result<(), String> {
+    let path = Path::new(&path_str);
+    let display = path.display();
 
-impl<T> StatefulList<T> {
-    pub fn with_items(items: Vec<T>, initial_state: usize) -> StatefulList<T> {
-        StatefulList {
-            state: initial_state,
-            items,
-        }
-    }
+    // Open a file in write-only mode, returns `io::Result<File>`
+    let mut file = match File::create(&path) {
+        Err(why) => return Err(format!("couldn't create {}: {}", display, why)),
+        Ok(file) => file,
+    };
 
-    pub fn next(&mut self) {
-        if self.state == self.items.len() - 1 {
-            self.state = 0
-        } else {
-            self.state += 1;
-        }
-    }
-
-    pub fn previous(&mut self) {
-        if self.state == 0 {
-            self.state = self.items.len() - 1
-        } else {
-            self.state -= 1;
-        }
+    // Write the `LOREM_IPSUM` string to `file`, returns `io::Result<()>`
+    match file.write_all(value.as_bytes()) {
+        Err(why) => return Err(format!("couldn't write to {}: {}", display, why)),
+        Ok(_) => Ok(()),
     }
 }
 
@@ -107,7 +95,7 @@ impl<T> StatefulList<T> {
 pub async fn fetch_codewars_download_info(
     kata_id: &str,
     langage: Option<&str>,
-) -> Result<(String, Vec<String>), Box<dyn Error>> {
+) -> Result<(String, Vec<String>, Vec<String>), Box<dyn Error>> {
     // get instruction
     let resp = reqwest::get(format!(
         "https://www.codewars.com/api/v1/code-challenges/{}",
@@ -131,14 +119,89 @@ pub async fn fetch_codewars_download_info(
         }
     ))?;
 
-    let solution_field_elems = tab.wait_for_elements("#code > div.text-editor.js-editor.has-shadow > div.CodeMirror.cm-s-codewars > div.CodeMirror-scroll > div.CodeMirror-sizer > div > div > div > div.CodeMirror-code > div > pre");
+    let solution_field_elems = tab.wait_for_elements("#code div.CodeMirror-code > div > pre");
     let solution_field_lines = match solution_field_elems {
         Ok(lines) => lines
             .iter()
             .map(|line| line.get_inner_text().unwrap_or_default())
             .collect::<Vec<String>>(),
-        Err(_) => return Err("failed to get solution boilerplate".into()),
+        Err(_) => return Err("failed to get the code sample".into()),
     };
 
-    Ok((instruction, solution_field_lines))
+    let tests_field_elems = tab.wait_for_elements("#fixture div.CodeMirror-code > div > pre");
+    let tests_field_lines = match tests_field_elems {
+        Ok(lines) => lines
+            .iter()
+            .map(|line| line.get_inner_text().unwrap_or_default())
+            .collect::<Vec<String>>(),
+        Err(_) => return Err("failed to get the code sample".into()),
+    };
+
+    Ok((instruction, solution_field_lines, tests_field_lines))
+}
+
+// yet a another utils func
+
+pub fn language_to_extension(language: &str) -> Option<&str> {
+    match language {
+        "agda" => Some(".agda"),
+        "bf" => Some(".bf"),
+        "c" => Some(".c"),
+        "cfml" => Some(".cfm"),
+        "clojure" => Some(".clj"),
+        "cobol" => Some(".cob"),
+        "coffeescript" => Some(".coffee"),
+        "commonlisp" => Some(".lisp"),
+        "coq" => Some(".v"),
+        "cpp" => Some(".cpp"),
+        "crystal" => Some(".cr"),
+        "csharp" => Some(".cs"),
+        "d" => Some(".d"),
+        "dart" => Some(".dart"),
+        "elixir" => Some(".ex"),
+        "elm" => Some(".elm"),
+        "erlang" => Some(".erl"),
+        "factor" => Some(".factor"),
+        "forth" => Some(".forth"),
+        "fortran" => Some(".f90"),
+        "fsharp" => Some(".fs"),
+        "go" => Some(".go"),
+        "groovy" => Some(".groovy"),
+        "haskell" => Some(".hs"),
+        "haxe" => Some(".hx"),
+        "idris" => Some(".idr"),
+        "java" => Some(".java"),
+        "javascript" => Some(".js"),
+        "julia" => Some(".jl"),
+        "kotlin" => Some(".kt"),
+        "lambdacalc" => Some(".lc"),
+        "lean" => Some(".lean"),
+        "lua" => Some(".lua"),
+        "nasm" => Some(".asm"),
+        "nim" => Some(".nim"),
+        "objc" => Some(".m"),
+        "ocaml" => Some(".ml"),
+        "pascal" => Some(".pas"),
+        "perl" => Some(".pl"),
+        "php" => Some(".php"),
+        "powershell" => Some(".ps1"),
+        "prolog" => Some(".pl"),
+        "purescript" => Some(".purs"),
+        "python" => Some(".py"),
+        "r" => Some(".r"),
+        "racket" => Some(".rkt"),
+        "raku" => Some(".raku"),
+        "reason" => Some(".re"),
+        "riscv" => Some(".s"),
+        "ruby" => Some(".rb"),
+        "rust" => Some(".rs"),
+        "scala" => Some(".scala"),
+        "shell" => Some(".sh"),
+        "solidity" => Some(".sol"),
+        "sql" => Some(".sql"),
+        "swift" => Some(".swift"),
+        "typescript" => Some(".ts"),
+        "vb" => Some(".vb"),
+        _ => None,
+    }
 }
