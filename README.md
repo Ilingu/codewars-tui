@@ -2,7 +2,7 @@
 
 #### ➡ An interactive codewars terminal user iterface (TUI), to search, explore and download kata in a graphical way.
 
-<video src="./assets/CodewrasCLI_demo.mp4" alt="Basic demo of Codewars CLI" />
+<video src="./assets/CodewrasCLI_demo.mp4" alt="Basic demo of Codewars CLI"></video>
 
 ## Purpose
 
