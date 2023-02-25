@@ -1,4 +1,4 @@
-use std::fs;
+use std::{fs, process::Command};
 
 use crossterm::{
     event::{self, Event, KeyCode, MouseEventKind},
@@ -15,8 +15,8 @@ use crate::{
     },
     ui::{ui, StatefulList},
     utils::{
-        fetch_codewars_download_info, fetch_html, language_to_extension, open_url, write_file,
-        TextMethods,
+        fetch_codewars_download_info, fetch_html, language_to_extension, ls_dir, open_url,
+        trim_specials_chars, write_file, TextMethods,
     },
     TERMINAL_REF_SIZE,
 };
@@ -30,8 +30,9 @@ impl CodewarsCLI {
             terminal_size: (0, 0),
             field_dropdown: (false, StatefulList::with_items(vec![], 0)),
             download_modal: (DownloadModalInput::Disabled, 0),
-            download_path: String::new(),
+            download_path: (String::new(), StatefulList::with_items(vec![], 0)),
             download_langage: (false, StatefulList::with_items(vec![], 0)),
+            download_error_field: vec![],
             search_result: StatefulList::with_items(vec![], 0),
             search_field: String::new(),
             sortby_field: 0,
@@ -151,6 +152,48 @@ impl CodewarsCLI {
         }
     }
 
+    pub fn run_preinstall(language: &str, path: &str) -> Result<String, String> {
+        match language {
+            "rust" => {
+                let cmd_res = Command::new("cargo").arg("init").current_dir(path).spawn();
+                match cmd_res {
+                    Ok(_) => Ok("src/".to_string()),
+                    Err(err) => Err(err.to_string()),
+                }
+            }
+            _ => Err("this language doesn't exist".to_string()),
+        }
+    }
+
+    pub fn run_postinstall(path: &str) -> Result<(), String> {
+        match Command::new("codium").arg(path).spawn() {
+            Ok(_) => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    pub fn autocomplete_path(&mut self) {
+        let parts = self.download_path.0.split("/").collect::<Vec<&str>>();
+        let parent_dir = parts[0..parts.len() - 1].join("/");
+        if let Ok(child_dirs) = ls_dir(&parent_dir) {
+            let usearch = match parts.last() {
+                Some(data) => data.to_lowercase().trim().to_string(),
+                None => return,
+            };
+
+            let match_dirs = child_dirs
+                .iter()
+                .filter(|d| **d == usearch)
+                .map(|md| md.to_owned())
+                .collect::<Vec<String>>();
+
+            self.download_path.1 = StatefulList::with_items(match_dirs, 0);
+        } else {
+            self.download_error_field
+                .push("Invalid directory".to_string());
+        }
+    }
+
     fn build_url(&self) -> String {
         // query args
         let query = format!("?q={}", encode(self.search_field.as_str()));
@@ -232,16 +275,21 @@ impl KataPreview {
         udownload_path = udownload_path.trim_end_matches("/");
         let download_path = format!(
             "{udownload_path}/{}",
-            self.name.to_lowercase().trim().replace(" ", "-")
+            trim_specials_chars(self.name.to_lowercase().trim())
         );
 
         if let Err(why) = fs::create_dir_all(&download_path) {
             return Err(why.to_string());
         }
 
+        let preinstall = match CodewarsCLI::run_preinstall(language, download_path.as_str()) {
+            Ok(path) => path,
+            Err(_) => String::new(),
+        };
+
         let language_ext = language_to_extension(language).unwrap_or_default();
-        let code_filename = format!("{download_path}/solution{}", language_ext);
-        let tests_filename = format!("{download_path}/tests{}", language_ext);
+        let code_filename = format!("{download_path}/{}solution{}", preinstall, language_ext);
+        let tests_filename = format!("{download_path}/{}tests{}", preinstall, language_ext);
         let instruction_filename = format!("{download_path}/instruction.md");
 
         if let Err(why) = write_file(code_filename, sample_code_lines.join("\n")) {
@@ -253,6 +301,9 @@ impl KataPreview {
         if let Err(why) = write_file(tests_filename, sample_tests_lines.join("\n")) {
             return Err(why.to_string());
         }
+
+        if let Err(_) = CodewarsCLI::run_postinstall(download_path.as_str()) {}
+
         Ok(())
     }
 }
@@ -277,7 +328,7 @@ pub async fn run_app<B: Backend>(
             Event::Paste(data) => {
                 match state.download_modal.0 {
                     DownloadModalInput::Path => {
-                        state.download_path.push_str(data.as_str());
+                        state.download_path.0.push_str(data.as_str());
                     }
                     _ => {}
                 }
@@ -428,13 +479,13 @@ pub async fn run_app<B: Backend>(
                                     ) {}
                                 }
                                 KeyCode::Char('D') | KeyCode::Char('d') => {
-                                    if state.download_path == String::new() {
+                                    if state.download_path.0 == String::new() {
                                         let uname = get_current_username()
                                             .unwrap_or_default()
                                             .to_str()
                                             .unwrap_or_default()
                                             .to_string();
-                                        state.download_path = format!("/home/{uname}/");
+                                        state.download_path.0 = format!("/home/{uname}/");
                                     }
 
                                     state.download_langage = (
@@ -484,13 +535,17 @@ pub async fn run_app<B: Backend>(
                                 }
                             }
                             DownloadModalInput::Path => match key.code {
-                                KeyCode::Char(c) => state.download_path.push(c),
+                                KeyCode::Char(c) => {
+                                    state.download_path.0.push(c);
+                                    state.autocomplete_path();
+                                }
                                 KeyCode::Backspace => {
-                                    if state.download_path.split("/").count() != 4
-                                        || state.download_path.chars().last().unwrap_or_default()
+                                    if state.download_path.0.split("/").count() != 4
+                                        || state.download_path.0.chars().last().unwrap_or_default()
                                             != '/'
                                     {
-                                        state.download_path.pop();
+                                        state.download_path.0.pop();
+                                        state.autocomplete_path();
                                     }
                                 }
                                 KeyCode::Tab | KeyCode::Down => {
@@ -518,7 +573,7 @@ pub async fn run_app<B: Backend>(
                                                 [state.download_langage.1.state]
                                                 .0
                                                 .as_str(),
-                                            state.download_path.as_str(),
+                                            state.download_path.0.as_str(),
                                         )
                                         .await;
                                     match download_result {

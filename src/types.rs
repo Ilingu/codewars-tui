@@ -263,9 +263,11 @@ pub struct CodewarsCLI {
     pub input_mode: InputMode,
     pub search_result: StatefulList<(KataPreview, usize)>,
     pub field_dropdown: (bool, StatefulList<(String, usize)>),
+
     pub download_modal: (DownloadModalInput, usize),
-    pub download_path: String,
+    pub download_path: (String, StatefulList<String>), // (value; autocompletions suggestions)
     pub download_langage: (bool, StatefulList<(String, usize)>),
+    pub download_error_field: Vec<String>,
     // fields state
     pub search_field: String,
     pub sortby_field: usize,

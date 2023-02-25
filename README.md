@@ -42,9 +42,12 @@ sudo apt install chromium-browser
 ## Improvement roadmap (will very likely never be done)
 
 - message to user (e.g: "download successfully", "failed: reason"...)
-- stop using "scapper", and only use "headless_chrome", more use of the API
-- store the latest download path locally for future uses
-- path input auto-completion on the path (with tab or idk)
+- stop using "scapper" and only use "headless_chrome", more use of the API
+- store the latest download path locally for future uses (setting page+ editor terminal command)
+- path input auto-completion on the path (with tab or idk) (Up/Down to change suggestion, Right to confirm)
+- `DONE` <s>in downloading windows, display the kata name to download</s>
+- `DONE` <s>trim all special chars when created the kata folder</s>
+- `DONE` <s>automatic projects init (e.g: for rust, run `cargo init` then delete `.git` folder)</s>
 
 ## Credit zone
 

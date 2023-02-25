@@ -35,6 +35,18 @@ pub fn rank_color(rank: &str, default: Color) -> Color {
     }
 }
 
+pub fn trim_specials_chars(string: &str) -> String {
+    let mut out = String::new();
+    for ch in string.chars() {
+        if ch.is_alphabetic() {
+            out.push(ch);
+        } else if ch == ' ' {
+            out.push('-');
+        }
+    }
+    return out;
+}
+
 pub fn open_url(url: &str) -> Result<(), String> {
     let cmd_res = if cfg!(target_os = "windows") {
         Command::new("start").arg(url).output()
@@ -45,6 +57,24 @@ pub fn open_url(url: &str) -> Result<(), String> {
     return match cmd_res {
         Ok(_) => Ok(()),
         Err(err) => Err(err.to_string()),
+    };
+}
+
+pub fn ls_dir(path: &str) -> Result<Vec<String>, String> {
+    if cfg!(target_os = "windows") {
+        // let cmd_res = Command::new("dir").arg("/d").current_dir(path).output();
+        return Err("not supported".to_string());
+    } else {
+        let cmd_res = Command::new("dir").current_dir(path).output();
+        return match cmd_res {
+            Ok(out) => Ok(out
+                .status
+                .to_string()
+                .split("  ")
+                .map(|s| s.to_string())
+                .collect::<Vec<String>>()),
+            Err(err) => Err(err.to_string()),
+        };
     };
 }
 

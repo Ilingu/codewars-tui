@@ -462,6 +462,7 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
         .margin(2)
         .constraints(
             [
+                Constraint::Length(1),
                 if state.download_langage.0 {
                     Constraint::Percentage(80)
                 } else {
@@ -475,6 +476,13 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
         )
         .split(area);
 
+    let header = Paragraph::new(format!(
+        "{}, Download Info",
+        state.search_result.items[state.download_modal.1].0.name
+    ))
+    .alignment(Alignment::Center);
+    f.render_widget(header, chunks[0]);
+
     if state.download_langage.0 {
         f.render_widget(
             dropdown(
@@ -483,7 +491,7 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
                 &state.terminal_size,
                 Some(22),
             ),
-            chunks[0],
+            chunks[1],
         );
     } else {
         let language = Paragraph::new(
@@ -502,11 +510,11 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
             DownloadModalInput::Langage => Style::default().fg(Color::LightYellow),
             _ => Style::default(),
         });
-        f.render_widget(language, chunks[0]);
+        f.render_widget(language, chunks[1]);
     }
 
     let path = Paragraph::new(Spans::from(vec![
-        Span::raw(state.download_path.to_owned()),
+        Span::raw(state.download_path.0.to_owned()),
         match state.download_modal.0 {
             DownloadModalInput::Path => Span::styled(
                 "|",
@@ -516,6 +524,12 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
             ),
             _ => Span::from(""),
         },
+        Span::styled(
+            state.download_path.1.items[state.download_path.1.state].to_owned(),
+            Style::default()
+                .add_modifier(Modifier::ITALIC)
+                .fg(Color::DarkGray),
+        ),
     ]))
     .alignment(Alignment::Left)
     .block(
@@ -528,7 +542,7 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
         DownloadModalInput::Path => Style::default().fg(Color::LightYellow),
         _ => Style::default(),
     });
-    f.render_widget(path, chunks[1]);
+    f.render_widget(path, chunks[2]);
 
     let submit = Paragraph::new("Download ✅")
         .alignment(Alignment::Center)
@@ -541,5 +555,5 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
             DownloadModalInput::Submit => Style::default().fg(Color::LightGreen),
             _ => Style::default(),
         });
-    f.render_widget(submit, chunks[2]);
+    f.render_widget(submit, chunks[3]);
 }
