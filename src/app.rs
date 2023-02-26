@@ -10,9 +10,10 @@ use urlencoding::encode;
 
 use crate::{
     types::{
-        CodewarsCLI, DownloadModalInput, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS,
+        CodewarsCLI, CursorDirection, DownloadModalInput, InputMode, KataPreview, DIFFICULTY,
+        LANGAGE, SORT_BY, TAGS,
     },
-    ui::{ui, StatefulList},
+    ui::{ui, InputWidget, StatefulList},
     utils::{
         fetch_codewars_download_info, fetch_html, get_uname, language_to_extension, ls_dir,
         open_url, trim_specials_chars, write_file, TextMethods,
@@ -29,11 +30,10 @@ impl CodewarsCLI {
             terminal_size: (0, 0),
             field_dropdown: (false, StatefulList::with_items(vec![], 0)),
             download_modal: (DownloadModalInput::Disabled, 0),
-            download_path: (String::new(), StatefulList::with_items(vec![], 0)),
+            download_path: InputWidget::default(),
             download_langage: (false, StatefulList::with_items(vec![], 0)),
-            download_error_field: vec![],
             search_result: StatefulList::with_items(vec![], 0),
-            search_field: String::new(),
+            search_field: InputWidget::default(),
             sortby_field: 0,
             langage_field: 0,
             difficulty_field: 0,
@@ -172,7 +172,11 @@ impl CodewarsCLI {
     }
 
     pub fn autocomplete_path(&mut self) {
-        let parts = self.download_path.0.split("/").collect::<Vec<&str>>();
+        if self.download_path.cursor_pos != self.download_path.value.len() {
+            return; // if cursor at the end we don't want to autosuggest
+        }
+
+        let parts = self.download_path.value.split("/").collect::<Vec<&str>>();
         let parent_dir = parts[0..parts.len() - 1].join("/");
         if let Ok(child_dirs) = ls_dir(&parent_dir) {
             let usearch = match parts.last() {
@@ -186,29 +190,31 @@ impl CodewarsCLI {
                 .map(|md| md.to_owned())
                 .collect::<Vec<String>>();
 
-            self.download_path.1 = StatefulList::with_items(match_dirs, 0);
+            self.download_path.suggestion = StatefulList::with_items(match_dirs, 0);
         } else {
-            self.download_path.1 = StatefulList::with_items(vec![], 0);
-            self.download_error_field
-                .push("Invalid directory".to_string());
+            self.download_path.suggestion = StatefulList::with_items(vec![], 0);
+            // error message
         }
     }
 
-    pub fn accept_suggestion(&mut self) {
-        if self.download_path.1.items.len() <= 0 {
+    pub fn accept_path_suggestion(&mut self) {
+        if self.download_path.suggestion.items.len() <= 0 {
             return;
         }
 
-        let parts = self.download_path.0.split("/").collect::<Vec<&str>>();
-        self.download_path.0 = parts[0..parts.len() - 1].join("/")
-            + ("/".to_string() + self.download_path.1.items[self.download_path.1.state].as_str())
-                .as_str();
-        self.download_path.1 = StatefulList::with_items(vec![], 0)
+        let parts = self.download_path.value.split("/").collect::<Vec<&str>>();
+        self.download_path.value = parts[0..parts.len() - 1].join("/")
+            + ("/".to_string()
+                + self.download_path.suggestion.items[self.download_path.suggestion.state]
+                    .as_str())
+            .as_str();
+        self.download_path.cursor_pos = self.download_path.value.len();
+        self.download_path.suggestion = StatefulList::with_items(vec![], 0)
     }
 
     fn build_url(&self) -> String {
         // query args
-        let query = format!("?q={}", encode(self.search_field.as_str()));
+        let query = format!("?q={}", encode(self.search_field.value.as_str()));
 
         // sortby args
         let sortby_value = match SORT_BY[self.sortby_field] {
@@ -340,7 +346,7 @@ pub async fn run_app<B: Backend>(
             Event::Paste(data) => {
                 match state.download_modal.0 {
                     DownloadModalInput::Path => {
-                        state.download_path.0.push_str(data.as_str());
+                        state.download_path.push_str(data.as_str());
                     }
                     _ => {}
                 }
@@ -426,10 +432,13 @@ pub async fn run_app<B: Backend>(
                         },
 
                         InputMode::Search => match key.code {
-                            KeyCode::Char(c) => state.search_field.push(c),
+                            KeyCode::Char(c) => state.search_field.push_char(c),
                             KeyCode::Enter => state.submit_search().await,
-                            KeyCode::Backspace => {
-                                state.search_field.pop();
+                            KeyCode::Backspace => state.search_field.backspace(),
+                            KeyCode::Delete => state.search_field.del(),
+                            KeyCode::Left => state.search_field.move_cursor(CursorDirection::LEFT),
+                            KeyCode::Right => {
+                                state.search_field.move_cursor(CursorDirection::RIGHT)
                             }
                             KeyCode::Tab | KeyCode::Down => state.change_state(InputMode::SortBy),
                             KeyCode::Esc => state.change_state(InputMode::Normal),
@@ -491,9 +500,12 @@ pub async fn run_app<B: Backend>(
                                     ) {}
                                 }
                                 KeyCode::Char('D') | KeyCode::Char('d') => {
-                                    if state.download_path.0 == String::new() {
+                                    if state.download_path.value == String::new() {
                                         let uname = get_uname();
-                                        state.download_path.0 = format!("/home/{uname}/");
+                                        state
+                                            .download_path
+                                            .push_str(format!("/home/{uname}/").as_str());
+                                        state.autocomplete_path();
                                     }
 
                                     state.download_langage = (
@@ -544,23 +556,24 @@ pub async fn run_app<B: Backend>(
                             }
                             DownloadModalInput::Path => match key.code {
                                 KeyCode::Char(c) => match c {
-                                    '>' => state.download_path.1.next(),
-                                    '<' => state.download_path.1.previous(),
-                                    ' ' => state.accept_suggestion(),
+                                    '>' => state.download_path.suggestion.next(),
+                                    '<' => state.download_path.suggestion.previous(),
+                                    ' ' => state.accept_path_suggestion(),
                                     _ => {
-                                        state.download_path.0.push(c);
+                                        state.download_path.push_char(c);
                                         state.autocomplete_path();
                                     }
                                 },
-                                KeyCode::Right => state.accept_suggestion(),
                                 KeyCode::Backspace => {
-                                    if state.download_path.0.split("/").count() != 4
-                                        || state.download_path.0.chars().last().unwrap_or_default()
-                                            != '/'
-                                    {
-                                        state.download_path.0.pop();
-                                        state.autocomplete_path();
-                                    }
+                                    state.download_path.backspace();
+                                    state.autocomplete_path();
+                                }
+                                KeyCode::Delete => state.download_path.del(),
+                                KeyCode::Left => {
+                                    state.download_path.move_cursor(CursorDirection::LEFT)
+                                }
+                                KeyCode::Right => {
+                                    state.download_path.move_cursor(CursorDirection::RIGHT)
                                 }
                                 KeyCode::Tab | KeyCode::Down => {
                                     state.download_modal.0 = DownloadModalInput::Submit
@@ -587,7 +600,7 @@ pub async fn run_app<B: Backend>(
                                                 [state.download_langage.1.state]
                                                 .0
                                                 .as_str(),
-                                            state.download_path.0.as_str(),
+                                            state.download_path.value.as_str(),
                                         )
                                         .await;
                                     match download_result {

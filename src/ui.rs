@@ -9,7 +9,8 @@ use tui::{
 
 use crate::{
     types::{
-        CodewarsCLI, DownloadModalInput, InputMode, KataPreview, DIFFICULTY, LANGAGE, SORT_BY, TAGS,
+        CodewarsCLI, CursorDirection, DownloadModalInput, InputMode, KataPreview, DIFFICULTY,
+        LANGAGE, SORT_BY, TAGS,
     },
     utils::{gen_rand_colors, rank_color},
     TERMINAL_REF_SIZE,
@@ -64,6 +65,117 @@ impl<T> StatefulList<T> {
         } else {
             self.state -= 1;
         }
+    }
+}
+
+pub struct InputWidget {
+    pub value: String,
+    pub cursor_pos: usize,
+    pub suggestion: StatefulList<String>,
+}
+
+impl InputWidget {
+    pub fn default() -> Self {
+        Self {
+            value: String::new(),
+            cursor_pos: 0,
+            suggestion: StatefulList::with_items(vec![], 0),
+        }
+    }
+
+    pub fn push_char(&mut self, ch: char) {
+        self.value.insert(self.cursor_pos, ch);
+        self.cursor_pos += 1;
+    }
+    pub fn push_str(&mut self, string: &str) {
+        self.value.insert_str(self.cursor_pos, string);
+        self.cursor_pos += string.len();
+    }
+    /// backspace behavior
+    pub fn backspace(&mut self) {
+        if self.cursor_pos <= 0 {
+            return;
+        }
+        self.value.remove(self.cursor_pos - 1);
+        self.cursor_pos -= 1;
+    }
+    /// 'del' key behavior
+    pub fn del(&mut self) {
+        if self.cursor_pos == self.value.len() {
+            return;
+        }
+        self.value.remove(self.cursor_pos);
+    }
+
+    pub fn set_suggestions(&mut self, suggestions: Vec<String>) {
+        self.suggestion = StatefulList::with_items(suggestions, 0)
+    }
+    pub fn append_suggestions(&mut self, mut suggestions: Vec<String>) {
+        self.suggestion.items.append(&mut suggestions);
+    }
+
+    pub fn move_cursor(&mut self, direction: CursorDirection) {
+        match direction {
+            CursorDirection::RIGHT => {
+                if self.cursor_pos == self.value.len() {
+                    return;
+                }
+                self.cursor_pos += 1;
+            }
+            CursorDirection::LEFT => {
+                if self.cursor_pos <= 0 {
+                    return;
+                }
+                self.cursor_pos -= 1;
+            }
+        }
+    }
+
+    /// no style, alignment, blocks just the text and cursor and suggestions
+    pub fn basic_render(&mut self, is_active: bool) -> Paragraph<'static> {
+        let mut text: Vec<Span> = vec![];
+
+        let cursor = if is_active {
+            Span::styled(
+                "|",
+                Style::default()
+                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
+                    .fg(Color::White),
+            )
+        } else {
+            Span::from("")
+        };
+
+        if self.value.len() <= 0 {
+            text.push(cursor);
+        } else {
+            if self.cursor_pos <= 0 {
+                text.push(cursor.clone());
+            }
+
+            for (i, ch) in self.value.chars().enumerate() {
+                text.push(Span::raw(ch.to_string()));
+                if i + 1 == self.cursor_pos {
+                    text.push(cursor.clone());
+                }
+            }
+        }
+
+        // suggestions (only if cursor at the end and is_active)
+        if is_active && self.cursor_pos == self.value.len() {
+            text.push(if self.suggestion.items.len() > 0 {
+                Span::styled(
+                    self.suggestion.items[self.suggestion.state].to_owned(),
+                    Style::default()
+                        .add_modifier(Modifier::ITALIC)
+                        .fg(Color::DarkGray),
+                )
+            } else {
+                Span::from("")
+            });
+        }
+
+        return Paragraph::new(Spans::from(text));
     }
 }
 
@@ -240,29 +352,20 @@ fn draw_search_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
     let help = Paragraph::new(APP_KEYS_DESC);
     f.render_widget(help, chunks[1]);
 
-    let search = Paragraph::new(Spans::from(vec![
-        Span::raw(state.search_field.to_owned()),
-        match state.input_mode {
-            InputMode::Search => Span::styled(
-                "|",
-                Style::default()
-                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
-                    .fg(Color::White),
-            ),
-            _ => Span::from(""),
-        },
-    ]))
-    .alignment(Alignment::Left)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title("Search Kata"),
-    )
-    .style(match state.input_mode {
-        InputMode::Search => Style::default().fg(Color::LightYellow),
-        _ => Style::default(),
-    });
+    let search = state
+        .search_field
+        .basic_render(state.input_mode == InputMode::Search)
+        .alignment(Alignment::Left)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Search Kata"),
+        )
+        .style(match state.input_mode {
+            InputMode::Search => Style::default().fg(Color::LightYellow),
+            _ => Style::default(),
+        });
     f.render_widget(search, chunks[2]);
 
     let sortby = Paragraph::new(SORT_BY[state.sortby_field].to_owned())
@@ -472,7 +575,7 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
             [
                 Constraint::Length(1),
                 if state.download_langage.0 {
-                    Constraint::Percentage(80)
+                    Constraint::Percentage(77)
                 } else {
                     Constraint::Length(3)
                 },
@@ -484,10 +587,12 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
         )
         .split(area);
 
-    let header = Paragraph::new(format!(
-        "{}, Download Info",
-        state.search_result.items[state.download_modal.1].0.name
-    ))
+    let header = Paragraph::new(
+        state.search_result.items[state.download_modal.1]
+            .0
+            .name
+            .to_owned(),
+    )
     .alignment(Alignment::Center);
     f.render_widget(header, chunks[0]);
 
@@ -497,7 +602,7 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
                 &state.download_langage.1,
                 &InputMode::Langage,
                 &state.terminal_size,
-                Some(22),
+                Some(21),
             ),
             chunks[1],
         );
@@ -521,39 +626,20 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
         f.render_widget(language, chunks[1]);
     }
 
-    let path = Paragraph::new(Spans::from(vec![
-        Span::raw(state.download_path.0.to_owned()),
-        match state.download_modal.0 {
-            DownloadModalInput::Path => Span::styled(
-                "|",
-                Style::default()
-                    .add_modifier(Modifier::BOLD | Modifier::SLOW_BLINK)
-                    .fg(Color::White),
-            ),
-            _ => Span::from(""),
-        },
-        if state.download_path.1.items.len() > 0 {
-            Span::styled(
-                state.download_path.1.items[state.download_path.1.state].to_owned(),
-                Style::default()
-                    .add_modifier(Modifier::ITALIC)
-                    .fg(Color::DarkGray),
-            )
-        } else {
-            Span::from("")
-        },
-    ]))
-    .alignment(Alignment::Left)
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .title("Download Path"),
-    )
-    .style(match state.download_modal.0 {
-        DownloadModalInput::Path => Style::default().fg(Color::LightYellow),
-        _ => Style::default(),
-    });
+    let path = state
+        .download_path
+        .basic_render(state.download_modal.0 == DownloadModalInput::Path)
+        .alignment(Alignment::Left)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Download Path"),
+        )
+        .style(match state.download_modal.0 {
+            DownloadModalInput::Path => Style::default().fg(Color::LightYellow),
+            _ => Style::default(),
+        });
     f.render_widget(path, chunks[2]);
 
     let submit = Paragraph::new("Download ✅")

@@ -1,7 +1,8 @@
 use serde::Deserialize;
 
-use crate::ui::StatefulList;
+use crate::ui::{InputWidget, StatefulList};
 
+#[derive(PartialEq)]
 pub enum InputMode {
     Normal,
     Search,
@@ -18,6 +19,11 @@ pub enum DownloadModalInput {
     Langage,
     Path,
     Submit,
+}
+
+pub enum CursorDirection {
+    RIGHT,
+    LEFT,
 }
 
 // for endpoint: &r%5B%5D=-8&r%5B%5D=-6 (decoded: "&r[]=-8&r[]=-6", here for kyu 8 and 6) // thus it's just the "state.difficulty_field"
@@ -263,13 +269,12 @@ pub struct CodewarsCLI {
     pub input_mode: InputMode,
     pub search_result: StatefulList<(KataPreview, usize)>,
     pub field_dropdown: (bool, StatefulList<(String, usize)>),
-
+    // download page
     pub download_modal: (DownloadModalInput, usize),
-    pub download_path: (String, StatefulList<String>), // (value; autocompletions suggestions)
+    pub download_path: InputWidget,
     pub download_langage: (bool, StatefulList<(String, usize)>),
-    pub download_error_field: Vec<String>,
     // fields state
-    pub search_field: String,
+    pub search_field: InputWidget,
     pub sortby_field: usize,
     pub langage_field: usize,
     pub difficulty_field: usize,
