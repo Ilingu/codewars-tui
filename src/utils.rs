@@ -1,3 +1,4 @@
+use std::fs::{self, OpenOptions};
 use std::io::prelude::*;
 use std::{error::Error, fs::File, path::Path, process::Command};
 
@@ -8,6 +9,7 @@ use scraper::element_ref::Text;
 use tui::style::Color;
 
 use rand::Rng;
+use users::get_current_username;
 
 use crate::types::KataAPI;
 
@@ -64,18 +66,59 @@ pub fn ls_dir(path: &str) -> Result<Vec<String>, String> {
     if cfg!(target_os = "windows") {
         // let cmd_res = Command::new("dir").arg("/d").current_dir(path).output();
         return Err("not supported".to_string());
-    } else {
-        let cmd_res = Command::new("dir").current_dir(path).output();
-        return match cmd_res {
-            Ok(out) => Ok(out
-                .status
-                .to_string()
-                .split("  ")
-                .map(|s| s.to_string())
-                .collect::<Vec<String>>()),
-            Err(err) => Err(err.to_string()),
-        };
+    }
+
+    let cmd_res = Command::new("dir").current_dir(path).output();
+    return match cmd_res {
+        Ok(out) => {
+            let out_str = String::from_utf8(out.stdout);
+            match out_str {
+                Ok(mut output) => {
+                    output = output.trim().replace("\t", " ").replace("\n", " ");
+                    Ok(output
+                        .split(" ")
+                        .filter(|x| !x.eq(&""))
+                        .map(|s| s.to_string())
+                        .collect::<Vec<String>>())
+                }
+                Err(why) => Err(why.to_string()),
+            }
+        }
+        Err(err) => Err(err.to_string()),
     };
+}
+
+pub fn get_uname() -> String {
+    return get_current_username()
+        .unwrap_or_default()
+        .to_str()
+        .unwrap_or_default()
+        .to_string();
+}
+
+pub fn log_print(log: String) {
+    let uname = get_uname();
+
+    let path_str = format!("/home/{uname}/.cache/codewars_cli");
+    let path = Path::new(path_str.as_str());
+    if let Err(_) = fs::create_dir_all(path) {
+        return;
+    }
+
+    let log_file = format!("{path_str}/dev_logs.log");
+    let log_file_path = Path::new(log_file.as_str());
+
+    let mut file = match OpenOptions::new()
+        .create(true)
+        .write(true)
+        .append(true)
+        .open(log_file_path)
+    {
+        Ok(f) => f,
+        Err(_) => return,
+    };
+
+    if let Err(_) = writeln!(file, "{log}") {}
 }
 
 fn is_valid_url(s: &str) -> bool {

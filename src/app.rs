@@ -7,7 +7,6 @@ use crossterm::{
 use scraper::{Html, Selector};
 use tui::{backend::Backend, Terminal};
 use urlencoding::encode;
-use users::get_current_username;
 
 use crate::{
     types::{
@@ -15,8 +14,8 @@ use crate::{
     },
     ui::{ui, StatefulList},
     utils::{
-        fetch_codewars_download_info, fetch_html, language_to_extension, ls_dir, open_url,
-        trim_specials_chars, write_file, TextMethods,
+        fetch_codewars_download_info, fetch_html, get_uname, language_to_extension, ls_dir,
+        open_url, trim_specials_chars, write_file, TextMethods,
     },
     TERMINAL_REF_SIZE,
 };
@@ -183,15 +182,28 @@ impl CodewarsCLI {
 
             let match_dirs = child_dirs
                 .iter()
-                .filter(|d| **d == usearch)
+                .filter(|d| d.to_lowercase().trim().contains(&usearch))
                 .map(|md| md.to_owned())
                 .collect::<Vec<String>>();
 
             self.download_path.1 = StatefulList::with_items(match_dirs, 0);
         } else {
+            self.download_path.1 = StatefulList::with_items(vec![], 0);
             self.download_error_field
                 .push("Invalid directory".to_string());
         }
+    }
+
+    pub fn accept_suggestion(&mut self) {
+        if self.download_path.1.items.len() <= 0 {
+            return;
+        }
+
+        let parts = self.download_path.0.split("/").collect::<Vec<&str>>();
+        self.download_path.0 = parts[0..parts.len() - 1].join("/")
+            + ("/".to_string() + self.download_path.1.items[self.download_path.1.state].as_str())
+                .as_str();
+        self.download_path.1 = StatefulList::with_items(vec![], 0)
     }
 
     fn build_url(&self) -> String {
@@ -480,11 +492,7 @@ pub async fn run_app<B: Backend>(
                                 }
                                 KeyCode::Char('D') | KeyCode::Char('d') => {
                                     if state.download_path.0 == String::new() {
-                                        let uname = get_current_username()
-                                            .unwrap_or_default()
-                                            .to_str()
-                                            .unwrap_or_default()
-                                            .to_string();
+                                        let uname = get_uname();
                                         state.download_path.0 = format!("/home/{uname}/");
                                     }
 
@@ -535,10 +543,16 @@ pub async fn run_app<B: Backend>(
                                 }
                             }
                             DownloadModalInput::Path => match key.code {
-                                KeyCode::Char(c) => {
-                                    state.download_path.0.push(c);
-                                    state.autocomplete_path();
-                                }
+                                KeyCode::Char(c) => match c {
+                                    '>' => state.download_path.1.next(),
+                                    '<' => state.download_path.1.previous(),
+                                    ' ' => state.accept_suggestion(),
+                                    _ => {
+                                        state.download_path.0.push(c);
+                                        state.autocomplete_path();
+                                    }
+                                },
+                                KeyCode::Right => state.accept_suggestion(),
                                 KeyCode::Backspace => {
                                     if state.download_path.0.split("/").count() != 4
                                         || state.download_path.0.chars().last().unwrap_or_default()

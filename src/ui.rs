@@ -43,6 +43,10 @@ impl<T> StatefulList<T> {
     }
 
     pub fn next(&mut self) {
+        if self.items.len() <= 0 {
+            return;
+        }
+
         if self.state == self.items.len() - 1 {
             self.state = 0
         } else {
@@ -51,6 +55,10 @@ impl<T> StatefulList<T> {
     }
 
     pub fn previous(&mut self) {
+        if self.items.len() <= 0 {
+            return;
+        }
+
         if self.state == 0 {
             self.state = self.items.len() - 1
         } else {
@@ -524,12 +532,16 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
             ),
             _ => Span::from(""),
         },
-        Span::styled(
-            state.download_path.1.items[state.download_path.1.state].to_owned(),
-            Style::default()
-                .add_modifier(Modifier::ITALIC)
-                .fg(Color::DarkGray),
-        ),
+        if state.download_path.1.items.len() > 0 {
+            Span::styled(
+                state.download_path.1.items[state.download_path.1.state].to_owned(),
+                Style::default()
+                    .add_modifier(Modifier::ITALIC)
+                    .fg(Color::DarkGray),
+            )
+        } else {
+            Span::from("")
+        },
     ]))
     .alignment(Alignment::Left)
     .block(
