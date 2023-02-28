@@ -154,7 +154,7 @@ impl CodewarsCLI {
     pub fn run_preinstall(language: &str, path: &str) -> Result<String, String> {
         match language {
             "rust" => {
-                let cmd_res = Command::new("cargo").arg("init").current_dir(path).spawn();
+                let cmd_res = Command::new("cargo").arg("init").current_dir(path).output();
                 match cmd_res {
                     Ok(_) => Ok("src/".to_string()),
                     Err(err) => Err(err.to_string()),
@@ -165,7 +165,7 @@ impl CodewarsCLI {
     }
 
     pub fn run_postinstall(path: &str) -> Result<(), String> {
-        match Command::new("codium").arg(path).spawn() {
+        match Command::new("codium").arg(path).output() {
             Ok(_) => Ok(()),
             Err(err) => Err(err.to_string()),
         }

@@ -43,7 +43,7 @@ pub fn trim_specials_chars(string: &str) -> String {
         if ch.is_alphabetic() {
             out.push(ch);
         } else if ch == ' ' {
-            out.push('-');
+            out.push('_');
         }
     }
     return out;

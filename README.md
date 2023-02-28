@@ -44,7 +44,9 @@ sudo apt install chromium-browser
 - message to user (e.g: "download successfully", "failed: reason"...)
 - stop using "scapper" and only use "headless_chrome", more use of the API
 - store the latest download path locally for future uses (setting page+ editor terminal command)
-- dynamic text input with cursor
+- search kata by id
+- fix rust bug when init cargo (output on screen)
+- `DONE` <s>dynamic text input with cursor</s>
 - `DONE` <s>path input auto-completion on the path (with tab or idk) (>/< to change suggestion, Right to confirm)</s>
 - `DONE` <s>in downloading windows, display the kata name to download</s>
 - `DONE` <s>trim all special chars when created the kata folder</s>
