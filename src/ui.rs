@@ -474,7 +474,9 @@ fn draw_list_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area
         .split(area);
 
     const ITEMS_IN_VIEW_REF: usize = 6 - 1; // for a terminal with 34 rows we can display  items of the list
-    let items_ranges = if state.search_result.state > ITEMS_IN_VIEW_REF {
+    let items_ranges = if state.search_result.items.len() - 1 <= ITEMS_IN_VIEW_REF {
+        0..=(state.search_result.items.len() - 1)
+    } else if state.search_result.state > ITEMS_IN_VIEW_REF {
         (state.search_result.state - ITEMS_IN_VIEW_REF)..=state.search_result.state
     } else {
         0..=ITEMS_IN_VIEW_REF

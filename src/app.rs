@@ -15,8 +15,8 @@ use crate::{
     },
     ui::{ui, InputWidget, StatefulList},
     utils::{
-        fetch_codewars_download_info, fetch_html, get_uname, language_to_extension, ls_dir,
-        open_url, trim_specials_chars, write_file, TextMethods,
+        fetch_codewars_api, fetch_html, fetch_kata_download_info, get_uname, language_to_extension,
+        ls_dir, open_url, trim_specials_chars, write_file, TextMethods,
     },
     TERMINAL_REF_SIZE,
 };
@@ -80,6 +80,26 @@ impl CodewarsCLI {
     }
 
     pub async fn submit_search(&mut self) {
+        // search by id
+        if self.search_field.value.len() == 24 {
+            if let Ok(data) = fetch_codewars_api(self.search_field.value.as_str()).await {
+                let kata = KataPreview {
+                    id: data.id,
+                    name: data.name,
+                    url: data.url,
+                    tags: data.tags,
+                    languages: data.languages,
+                    author: data.createdBy.username,
+                    total_completed: data.totalCompleted,
+                    rank: data.rank.name,
+                };
+                self.search_result = StatefulList::with_items(vec![(kata, 0)], 0);
+                self.change_state(InputMode::KataList);
+                return;
+            }
+        }
+
+        // search by inputs
         let url = self.build_url();
         let resp = fetch_html(url).await;
 
@@ -144,6 +164,10 @@ impl CodewarsCLI {
                 };
 
                 katas.push((kata, i));
+            }
+
+            if katas.len() <= 0 {
+                return; // TODO: error message to client
             }
 
             self.search_result = StatefulList::with_items(katas, 0);
@@ -283,7 +307,7 @@ impl KataPreview {
 
     pub async fn download(&self, language: &str, mut udownload_path: &str) -> Result<(), String> {
         let (instruction, sample_code_lines, sample_tests_lines) =
-            match fetch_codewars_download_info(self.id.as_str(), Some(language)).await {
+            match fetch_kata_download_info(self.id.as_str(), Some(language)).await {
                 Ok(data) => data,
                 Err(err) => {
                     return Err(err.to_string());
@@ -495,9 +519,13 @@ pub async fn run_app<B: Backend>(
                                     }
                                 }
                                 KeyCode::Enter => {
-                                    if let Err(_) = open_url(
-                                        &state.search_result.items[state.search_result.state].0.url,
-                                    ) {}
+                                    if state.search_result.items.len() > 0 {
+                                        if let Err(_) = open_url(
+                                            &state.search_result.items[state.search_result.state]
+                                                .0
+                                                .url,
+                                        ) {}
+                                    }
                                 }
                                 KeyCode::Char('D') | KeyCode::Char('d') => {
                                     if state.download_path.value == String::new() {

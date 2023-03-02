@@ -282,14 +282,36 @@ pub struct CodewarsCLI {
 }
 
 #[derive(Deserialize)]
+#[allow(non_snake_case)]
 pub struct KataAPI {
-    pub id: String,          // ID of the kata.
-    pub name: String,        // Name of the kata.
-    pub slug: String,        // Slug of the kata.
-    pub url: String,         // URL of the kata.
-    pub category: String,    // Category of the kata.
-    pub description: String, // Description of the kata in Markdown.
-    pub tags: Vec<String>,   // Array of tags associated with the kata.
+    pub id: String,             // ID of the kata.
+    pub name: String,           // Name of the kata.
+    pub slug: String,           // Slug of the kata.
+    pub url: String,            // URL of the kata.
+    pub category: String,       // Category of the kata.
+    pub description: String,    // Description of the kata in Markdown.
+    pub tags: Vec<String>,      // Array of tags associated with the kata.
     pub languages: Vec<String>, // Array of language names the kata is available in.
-                             // this struct is imcomplete, see https://dev.codewars.com/#get-code-challenge
+    pub rank: APIRank,
+    pub createdBy: APIAuthor,
+    pub publishedAt: String,
+    pub approvedAt: String,
+    pub totalCompleted: usize,
+    pub totalAttempts: usize,
+    pub totalStars: usize,
+    pub voteScore: usize,
+    // this struct is imcomplete, see https://dev.codewars.com/#get-code-challenge
+}
+
+#[derive(Deserialize)]
+pub struct APIAuthor {
+    pub username: String,
+    pub url: String,
+}
+
+#[derive(Deserialize)]
+pub struct APIRank {
+    pub id: isize,
+    pub name: String,
+    pub color: String,
 }

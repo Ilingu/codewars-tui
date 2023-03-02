@@ -164,20 +164,27 @@ pub fn write_file(path_str: String, value: String) -> Result<(), String> {
     }
 }
 
-// Fetch codewars sample code & instruction for puzzles
-pub async fn fetch_codewars_download_info(
-    kata_id: &str,
-    langage: Option<&str>,
-) -> Result<(String, Vec<String>, Vec<String>), Box<dyn Error>> {
+pub async fn fetch_codewars_api(kata_id: &str) -> Result<KataAPI, reqwest::Error> {
     // get instruction
-    let resp = reqwest::get(format!(
+    let api_resp = reqwest::get(format!(
         "https://www.codewars.com/api/v1/code-challenges/{}",
         kata_id
     ))
     .await?
     .json::<KataAPI>()
     .await?;
+    return Ok(api_resp);
+}
 
+// Fetch codewars sample code & instruction for puzzles
+pub async fn fetch_kata_download_info(
+    kata_id: &str,
+    langage: Option<&str>,
+) -> Result<(String, Vec<String>, Vec<String>), Box<dyn Error>> {
+    let resp = match fetch_codewars_api(kata_id).await {
+        Ok(data) => data,
+        Err(why) => return Err(why.into()),
+    };
     let instruction = resp.description; // instruction in markdown
 
     // get sample code
