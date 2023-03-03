@@ -9,10 +9,10 @@ use tui::{
 
 use crate::{
     types::{
-        CodewarsCLI, CursorDirection, DownloadModalInput, InputMode, KataPreview, DIFFICULTY,
-        LANGAGE, SORT_BY, TAGS,
+        CodewarsCLI, CursorDirection, DownloadModalInput, InputMode, KataAPI, DIFFICULTY, LANGAGE,
+        SORT_BY, TAGS,
     },
-    utils::{gen_rand_colors, rank_color},
+    utils::{gen_rand_colors, log_print, rank_color},
     TERMINAL_REF_SIZE,
 };
 
@@ -491,8 +491,7 @@ fn draw_list_section<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area
     }
 }
 
-fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
-    // const BG: tui::style::Color = Color::Rgb(89, 48, 66);
+fn draw_kata(kata: &KataAPI, is_active: bool) -> Paragraph<'static> {
     const FG_HEAD: tui::style::Color = Color::Rgb(104, 175, 49);
 
     let mut tags: Vec<Span> = vec![Span::styled(
@@ -521,7 +520,7 @@ fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
                     .add_modifier(Modifier::ITALIC)
                     .fg(Color::LightCyan),
             ),
-            Span::raw(kata.total_completed.to_string()),
+            Span::raw(kata.totalCompleted.to_string()),
             Span::styled(
                 " | ",
                 Style::default()
@@ -534,7 +533,7 @@ fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
                     .add_modifier(Modifier::ITALIC)
                     .fg(Color::LightCyan),
             ),
-            Span::raw(kata.author.to_owned()),
+            Span::raw(kata.createdBy.username.to_owned()),
         ]),
         Spans::from(tags),
         Spans::from(languages),
@@ -550,16 +549,16 @@ fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
                     ),
                     Span::raw(" - "),
                     Span::styled(
-                        kata.rank.to_owned(),
+                        kata.rank.name.to_owned(),
                         Style::default()
                             .add_modifier(Modifier::BOLD)
-                            .fg(rank_color(kata.rank.as_str(), Color::White)),
+                            .fg(rank_color(kata.rank.name.as_str(), Color::White)),
                     ),
                 ]))
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
                 .border_style(if is_active {
-                    Style::default().fg(rank_color(kata.rank.as_str(), Color::LightGreen))
+                    Style::default().fg(rank_color(kata.rank.name.as_str(), Color::LightGreen))
                 } else {
                     Style::default().fg(Color::DarkGray)
                 }),
@@ -570,6 +569,23 @@ fn draw_kata(kata: &KataPreview, is_active: bool) -> Paragraph<'static> {
 }
 
 fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area: Rect) {
+    const ITEM_IN_VIEW: u16 = 18;
+    let compute_percent = |no_items: usize| -> u16 {
+        // why all these fancy number? Just used regression to find a mathematical law
+
+        // -> affine way
+        (((no_items as f64) + 1.80519480519481) / 0.298961038961039).round() as u16
+
+        // -> polynomial way, much more precise on the right interval (from 0% to 65%)
+        // let a: f64 = 0.00145854145854146;
+        // let b: f64 = 0.1993006993007;
+        // let c: f64 = -0.72527472527431 - no_items as f64;
+        // let delta = b.powi(2) - 4.0 * a * c;
+
+        // let result = ((-b + delta.sqrt()) / (2.0 * a)).round() as u16;
+        // return result;
+    };
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .margin(2)
@@ -577,10 +593,16 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
             [
                 Constraint::Length(1),
                 if state.download_langage.0 {
-                    Constraint::Percentage(77)
+                    let percent = if state.download_langage.1.items.len() <= ITEM_IN_VIEW as usize {
+                        compute_percent(state.download_langage.1.items.len())
+                    } else {
+                        65
+                    };
+                    Constraint::Percentage(percent)
                 } else {
                     Constraint::Length(3)
                 },
+                Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Length(3),
                 Constraint::Min(0),
@@ -604,7 +626,7 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
                 &state.download_langage.1,
                 &InputMode::Langage,
                 &state.terminal_size,
-                Some(21),
+                Some(ITEM_IN_VIEW),
             ),
             chunks[1],
         );
@@ -644,6 +666,22 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
         });
     f.render_widget(path, chunks[2]);
 
+    let editor = state
+        .editor_field
+        .basic_render(state.download_modal.0 == DownloadModalInput::Editor)
+        .alignment(Alignment::Left)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title("Open with (terminal cmd)"),
+        )
+        .style(match state.download_modal.0 {
+            DownloadModalInput::Editor => Style::default().fg(Color::LightYellow),
+            _ => Style::default(),
+        });
+    f.render_widget(editor, chunks[3]);
+
     let submit = Paragraph::new("Download ✅")
         .alignment(Alignment::Center)
         .block(
@@ -655,5 +693,5 @@ fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, ar
             DownloadModalInput::Submit => Style::default().fg(Color::LightGreen),
             _ => Style::default(),
         });
-    f.render_widget(submit, chunks[3]);
+    f.render_widget(submit, chunks[4]);
 }

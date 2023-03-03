@@ -1,22 +1,31 @@
-use std::{fs, process::Command};
+use std::error::Error;
+use std::fs::File;
+use std::io::prelude::*;
+use std::{
+    fs::{self, OpenOptions},
+    path::Path,
+    process::Command,
+};
 
 use crossterm::{
     event::{self, Event, KeyCode, MouseEventKind},
     terminal::size,
 };
+use headless_chrome::Browser;
 use scraper::{Html, Selector};
 use tui::{backend::Backend, Terminal};
 use urlencoding::encode;
 
+use crate::types::{APIAuthor, APIRank, KataAPI};
 use crate::{
     types::{
-        CodewarsCLI, CursorDirection, DownloadModalInput, InputMode, KataPreview, DIFFICULTY,
+        CodewarsCLI, CursorDirection, DownloadModalInput, InputMode, SettingsDatas, DIFFICULTY,
         LANGAGE, SORT_BY, TAGS,
     },
     ui::{ui, InputWidget, StatefulList},
     utils::{
-        fetch_codewars_api, fetch_html, fetch_kata_download_info, get_uname, language_to_extension,
-        ls_dir, open_url, trim_specials_chars, write_file, TextMethods,
+        fetch_codewars_api, fetch_html, get_uname, language_to_extension, ls_dir, open_url,
+        trim_specials_chars, write_file, TextMethods,
     },
     TERMINAL_REF_SIZE,
 };
@@ -27,10 +36,12 @@ impl CodewarsCLI {
     pub fn new() -> CodewarsCLI {
         CodewarsCLI {
             input_mode: InputMode::Normal,
+            settings: Settings::load(),
             terminal_size: (0, 0),
             field_dropdown: (false, StatefulList::with_items(vec![], 0)),
             download_modal: (DownloadModalInput::Disabled, 0),
             download_path: InputWidget::default(),
+            editor_field: InputWidget::default(),
             download_langage: (false, StatefulList::with_items(vec![], 0)),
             search_result: StatefulList::with_items(vec![], 0),
             search_field: InputWidget::default(),
@@ -83,17 +94,7 @@ impl CodewarsCLI {
         // search by id
         if self.search_field.value.len() == 24 {
             if let Ok(data) = fetch_codewars_api(self.search_field.value.as_str()).await {
-                let kata = KataPreview {
-                    id: data.id,
-                    name: data.name,
-                    url: data.url,
-                    tags: data.tags,
-                    languages: data.languages,
-                    author: data.createdBy.username,
-                    total_completed: data.totalCompleted,
-                    rank: data.rank.name,
-                };
-                self.search_result = StatefulList::with_items(vec![(kata, 0)], 0);
+                self.search_result = StatefulList::with_items(vec![(data, 0)], 0);
                 self.change_state(InputMode::KataList);
                 return;
             }
@@ -117,9 +118,9 @@ impl CodewarsCLI {
             .unwrap();
             let rank_selector = Selector::parse("span").unwrap(); // only the first item
 
-            let mut katas: Vec<(KataPreview, usize)> = vec![];
+            let mut katas: Vec<(KataAPI, usize)> = vec![];
             for (i, element) in document.select(&kata_selector).enumerate() {
-                let mut kata = KataPreview::default();
+                let mut kata = KataAPI::default();
 
                 kata.id = element.value().id().unwrap_or_default().to_string();
                 kata.url = format!("https://www.codewars.com/kata/{}", kata.id);
@@ -143,12 +144,12 @@ impl CodewarsCLI {
                     )
                 }
 
-                kata.author = match element.select(&author_selector).next() {
+                kata.createdBy.username = match element.select(&author_selector).next() {
                     Some(elem) => elem.text().to_string(),
                     None => String::new(),
                 };
 
-                kata.total_completed = match element.select(&total_completed_selector).next() {
+                kata.totalCompleted = match element.select(&total_completed_selector).next() {
                     Some(elem) => elem
                         .text()
                         .to_string()
@@ -158,7 +159,7 @@ impl CodewarsCLI {
                     None => 0,
                 };
 
-                kata.rank = match element.select(&rank_selector).next() {
+                kata.rank.name = match element.select(&rank_selector).next() {
                     Some(elem) => elem.text().to_string(),
                     None => String::new(),
                 };
@@ -188,8 +189,12 @@ impl CodewarsCLI {
         }
     }
 
-    pub fn run_postinstall(path: &str) -> Result<(), String> {
-        match Command::new("codium").arg(path).output() {
+    pub fn run_postinstall(mut editor: &str, path: &str) -> Result<(), String> {
+        if editor.len() <= 0 {
+            editor = "codium"
+        }
+
+        match Command::new(editor).arg(path).output() {
             Ok(_) => Ok(()),
             Err(err) => Err(err.to_string()),
         }
@@ -210,7 +215,7 @@ impl CodewarsCLI {
 
             let match_dirs = child_dirs
                 .iter()
-                .filter(|d| d.to_lowercase().trim().contains(&usearch))
+                .filter(|d| d.to_lowercase().trim().starts_with(&usearch))
                 .map(|md| md.to_owned())
                 .collect::<Vec<String>>();
 
@@ -291,23 +296,106 @@ impl CodewarsCLI {
     }
 }
 
-impl KataPreview {
+pub struct Settings {
+    is_loaded: bool,
+    cache: SettingsDatas,
+}
+
+impl Settings {
+    fn load() -> Self {
+        Self {
+            is_loaded: false,
+            cache: SettingsDatas::default(),
+        }
+    }
+
+    fn get_file(read: bool, write: bool) -> Result<File, Box<dyn Error>> {
+        let uname = get_uname();
+        let path_str = format!("/home/{uname}/.cache/codewars_cli");
+        let path = Path::new(path_str.as_str());
+
+        if let Err(why) = fs::create_dir_all(path) {
+            return Err(Box::new(why));
+        }
+
+        let settings_file_path = format!("{path_str}/settings.json");
+
+        let file = OpenOptions::new()
+            .create(true)
+            .read(read)
+            .write(write)
+            .open(settings_file_path)?;
+
+        return Ok(file);
+    }
+
+    pub fn value(&mut self) -> Result<SettingsDatas, Box<dyn Error>> {
+        if self.is_loaded {
+            return Ok(self.cache.clone());
+        }
+        return self.fetch_and_cache();
+    }
+
+    pub fn fetch_and_cache(&mut self) -> Result<SettingsDatas, Box<dyn Error>> {
+        let mut file = Self::get_file(true, false)?;
+
+        let mut file_content = String::new();
+        file.read_to_string(&mut file_content)?;
+
+        let datas: SettingsDatas = serde_json::from_str(&file_content)?;
+        self.cache = datas.clone();
+        self.is_loaded = true;
+
+        return Ok(datas);
+    }
+
+    pub fn set(&mut self, datas: &SettingsDatas) -> Result<(), Box<dyn Error>> {
+        // Serialize data to a JSON string.
+        let data_buf = serde_json::to_string(&datas)?;
+
+        let mut file = Self::get_file(false, true)?;
+        writeln!(file, "{data_buf}")?;
+        Ok(())
+    }
+}
+
+impl KataAPI {
     pub fn default() -> Self {
         Self {
             id: String::new(),
             name: String::new(),
+            slug: String::new(),
             url: String::new(),
+            category: String::new(),
+            description: String::new(),
             tags: vec![],
             languages: vec![],
-            author: String::new(),
-            total_completed: 0,
-            rank: String::new(),
+            rank: APIRank {
+                id: 0,
+                color: String::new(),
+                name: String::new(),
+            },
+            createdBy: APIAuthor {
+                username: String::new(),
+                url: String::new(),
+            },
+            publishedAt: String::new(),
+            approvedAt: String::new(),
+            totalCompleted: 0,
+            totalAttempts: 0,
+            totalStars: 0,
+            voteScore: 0,
         }
     }
 
-    pub async fn download(&self, language: &str, mut udownload_path: &str) -> Result<(), String> {
+    pub async fn download(
+        &self,
+        language: &str,
+        mut udownload_path: &str,
+        editor: &str,
+    ) -> Result<(), String> {
         let (instruction, sample_code_lines, sample_tests_lines) =
-            match fetch_kata_download_info(self.id.as_str(), Some(language)).await {
+            match Self::fetch_kata_download_info(self.id.as_str(), Some(language)).await {
                 Ok(data) => data,
                 Err(err) => {
                     return Err(err.to_string());
@@ -344,9 +432,53 @@ impl KataPreview {
             return Err(why.to_string());
         }
 
-        if let Err(_) = CodewarsCLI::run_postinstall(download_path.as_str()) {}
+        if let Err(_) = CodewarsCLI::run_postinstall(editor, download_path.as_str()) {}
 
         Ok(())
+    }
+
+    // Fetch codewars sample code & instruction for puzzles
+    pub async fn fetch_kata_download_info(
+        kata_id: &str,
+        langage: Option<&str>,
+    ) -> Result<(String, Vec<String>, Vec<String>), Box<dyn Error>> {
+        let resp = match fetch_codewars_api(kata_id).await {
+            Ok(data) => data,
+            Err(why) => return Err(why.into()),
+        };
+        let instruction = resp.description; // instruction in markdown
+
+        // get sample code
+        let browser = Browser::default()?;
+        let tab = browser.new_tab()?;
+        tab.navigate_to(&format!(
+            "https://www.codewars.com/kata/{}/train{}",
+            kata_id,
+            match langage {
+                Some(l) => "/".to_string() + l,
+                None => String::new(),
+            }
+        ))?;
+
+        let solution_field_elems = tab.wait_for_elements("#code div.CodeMirror-code > div > pre");
+        let solution_field_lines = match solution_field_elems {
+            Ok(lines) => lines
+                .iter()
+                .map(|line| line.get_inner_text().unwrap_or_default())
+                .collect::<Vec<String>>(),
+            Err(_) => return Err("failed to get the code sample".into()),
+        };
+
+        let tests_field_elems = tab.wait_for_elements("#fixture div.CodeMirror-code > div > pre");
+        let tests_field_lines = match tests_field_elems {
+            Ok(lines) => lines
+                .iter()
+                .map(|line| line.get_inner_text().unwrap_or_default())
+                .collect::<Vec<String>>(),
+            Err(_) => return Err("failed to get the code sample".into()),
+        };
+
+        Ok((instruction, solution_field_lines, tests_field_lines))
     }
 }
 
@@ -529,10 +661,17 @@ pub async fn run_app<B: Backend>(
                                 }
                                 KeyCode::Char('D') | KeyCode::Char('d') => {
                                     if state.download_path.value == String::new() {
-                                        let uname = get_uname();
-                                        state
-                                            .download_path
-                                            .push_str(format!("/home/{uname}/").as_str());
+                                        match state.settings.value() {
+                                            Ok(SettingsDatas { download_path, .. }) => {
+                                                state.download_path.push_str(&download_path)
+                                            }
+                                            Err(_) => {
+                                                let uname = get_uname();
+                                                state
+                                                    .download_path
+                                                    .push_str(format!("/home/{uname}/").as_str());
+                                            }
+                                        }
                                         state.autocomplete_path();
                                     }
 
@@ -614,6 +753,38 @@ pub async fn run_app<B: Backend>(
                                 }
                                 _ => {}
                             },
+                            DownloadModalInput::Editor => match key.code {
+                                KeyCode::Tab | KeyCode::Down => {
+                                    state.download_modal.0 = DownloadModalInput::Submit
+                                }
+                                KeyCode::BackTab | KeyCode::Up => {
+                                    state.download_modal.0 = DownloadModalInput::Path
+                                }
+                                KeyCode::Char(c) => match c {
+                                    '>' => state.editor_field.suggestion.next(),
+                                    '<' => state.editor_field.suggestion.previous(),
+                                    ' ' => state.accept_path_suggestion(),
+                                    _ => {
+                                        state.editor_field.push_char(c);
+                                        state.autocomplete_path();
+                                    }
+                                },
+                                KeyCode::Backspace => {
+                                    state.editor_field.backspace();
+                                    state.autocomplete_path();
+                                }
+                                KeyCode::Delete => state.editor_field.del(),
+                                KeyCode::Left => {
+                                    state.editor_field.move_cursor(CursorDirection::LEFT)
+                                }
+                                KeyCode::Right => {
+                                    state.editor_field.move_cursor(CursorDirection::RIGHT)
+                                }
+                                KeyCode::Esc => {
+                                    state.download_modal.0 = DownloadModalInput::Disabled
+                                }
+                                _ => {}
+                            },
                             DownloadModalInput::Submit => match key.code {
                                 KeyCode::BackTab | KeyCode::Up => {
                                     state.download_modal.0 = DownloadModalInput::Path
@@ -622,22 +793,34 @@ pub async fn run_app<B: Backend>(
                                     let kata_to_download =
                                         &state.search_result.items[state.download_modal.1].0;
 
+                                    let language = &state.download_langage.1.items
+                                        [state.download_langage.1.state]
+                                        .0;
+
+                                    let editor = state
+                                        .settings
+                                        .value()
+                                        .unwrap_or(SettingsDatas {
+                                            editor_command: "codium".to_string(),
+                                            download_path: String::new(),
+                                        })
+                                        .editor_command;
+
                                     let download_result = kata_to_download
-                                        .download(
-                                            state.download_langage.1.items
-                                                [state.download_langage.1.state]
-                                                .0
-                                                .as_str(),
-                                            state.download_path.value.as_str(),
-                                        )
+                                        .download(language, &state.download_path.value, &editor)
                                         .await;
                                     match download_result {
                                         Ok(_) => {
                                             state.download_modal =
                                                 (DownloadModalInput::Disabled, 0);
                                             state.download_langage =
-                                                (false, StatefulList::with_items(vec![], 0))
+                                                (false, StatefulList::with_items(vec![], 0));
 
+                                            // update store
+                                            if let Err(_) = state.settings.set(&SettingsDatas {
+                                                editor_command: editor,
+                                                download_path: state.download_path.value.to_owned(),
+                                            }) {}
                                             // TODO: ok message to user
                                         }
                                         Err(_) => {

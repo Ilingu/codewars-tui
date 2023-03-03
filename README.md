@@ -42,8 +42,8 @@ sudo apt install chromium-browser
 ## Improvement roadmap
 
 - message to user (e.g: "download successfully", "failed: reason"...)
-- stop using "scapper" and only use "headless_chrome", more use of the API
-- store the latest download path locally for future uses (setting page+ editor terminal command)
+- detailed view of kata with the use of the API
+- store the latest download path locally for future uses (setting page + editor terminal command)
 - `DONE` <s>search kata by id</s>
 - `DONE` <s>fix rust bug when init cargo (output on screen)</s>
 - `DONE` <s>dynamic text input with cursor</s>

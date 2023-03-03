@@ -1,6 +1,9 @@
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::ui::{InputWidget, StatefulList};
+use crate::{
+    app::Settings,
+    ui::{InputWidget, StatefulList},
+};
 
 #[derive(PartialEq)]
 pub enum InputMode {
@@ -18,6 +21,7 @@ pub enum DownloadModalInput {
     Disabled,
     Langage,
     Path,
+    Editor,
     Submit,
 }
 
@@ -231,47 +235,18 @@ pub const TAGS: [&str; 109] = [
     "Web3",
 ];
 
-// Full katas implementation coming from API (for detailled view, if I have the will to program this non-essential part)
-pub struct Kata {
-    pub id: String,
-    pub name: String,
-    pub description: String,
-    pub url: String,
-    pub languages: Vec<String>,
-    pub tags: Vec<String>,
-    pub category: String,
-    pub desc: String,
-    pub rank: String,
-    pub author: String,
-    pub published_at: String,
-    pub total_attempts: usize,
-    pub total_completed: usize,
-    pub total_stars: usize,
-    pub created_at: String,
-}
-
-// Minified katas from search result (https://www.codewars.com/kata/search)
-pub struct KataPreview {
-    pub id: String,
-    pub name: String,
-    pub url: String,
-    pub tags: Vec<String>,
-    pub languages: Vec<String>,
-    pub author: String,
-    pub total_completed: usize,
-    pub rank: String,
-}
-
 pub struct CodewarsCLI {
     // client/framework state
     pub terminal_size: (u16, u16),
     // app state
+    pub settings: Settings,
     pub input_mode: InputMode,
-    pub search_result: StatefulList<(KataPreview, usize)>,
+    pub search_result: StatefulList<(KataAPI, usize)>,
     pub field_dropdown: (bool, StatefulList<(String, usize)>),
     // download page
     pub download_modal: (DownloadModalInput, usize),
     pub download_path: InputWidget,
+    pub editor_field: InputWidget,
     pub download_langage: (bool, StatefulList<(String, usize)>),
     // fields state
     pub search_field: InputWidget,
@@ -281,6 +256,22 @@ pub struct CodewarsCLI {
     pub tag_field: usize,
 }
 
+#[derive(Serialize, Deserialize, Clone)]
+pub struct SettingsDatas {
+    pub editor_command: String,
+    pub download_path: String,
+}
+
+impl SettingsDatas {
+    pub fn default() -> Self {
+        Self {
+            editor_command: "codium".to_string(),
+            download_path: String::new(),
+        }
+    }
+}
+
+// Minified katas from search result (https://www.codewars.com/kata/search)
 #[derive(Deserialize)]
 #[allow(non_snake_case)]
 pub struct KataAPI {

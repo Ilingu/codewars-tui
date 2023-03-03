@@ -2,8 +2,6 @@ use std::fs::{self, OpenOptions};
 use std::io::prelude::*;
 use std::{error::Error, fs::File, path::Path, process::Command};
 
-use headless_chrome::Browser;
-
 use reqwest::Url;
 use scraper::element_ref::Text;
 use tui::style::Color;
@@ -174,50 +172,6 @@ pub async fn fetch_codewars_api(kata_id: &str) -> Result<KataAPI, reqwest::Error
     .json::<KataAPI>()
     .await?;
     return Ok(api_resp);
-}
-
-// Fetch codewars sample code & instruction for puzzles
-pub async fn fetch_kata_download_info(
-    kata_id: &str,
-    langage: Option<&str>,
-) -> Result<(String, Vec<String>, Vec<String>), Box<dyn Error>> {
-    let resp = match fetch_codewars_api(kata_id).await {
-        Ok(data) => data,
-        Err(why) => return Err(why.into()),
-    };
-    let instruction = resp.description; // instruction in markdown
-
-    // get sample code
-    let browser = Browser::default()?;
-    let tab = browser.new_tab()?;
-    tab.navigate_to(&format!(
-        "https://www.codewars.com/kata/{}/train{}",
-        kata_id,
-        match langage {
-            Some(l) => "/".to_string() + l,
-            None => String::new(),
-        }
-    ))?;
-
-    let solution_field_elems = tab.wait_for_elements("#code div.CodeMirror-code > div > pre");
-    let solution_field_lines = match solution_field_elems {
-        Ok(lines) => lines
-            .iter()
-            .map(|line| line.get_inner_text().unwrap_or_default())
-            .collect::<Vec<String>>(),
-        Err(_) => return Err("failed to get the code sample".into()),
-    };
-
-    let tests_field_elems = tab.wait_for_elements("#fixture div.CodeMirror-code > div > pre");
-    let tests_field_lines = match tests_field_elems {
-        Ok(lines) => lines
-            .iter()
-            .map(|line| line.get_inner_text().unwrap_or_default())
-            .collect::<Vec<String>>(),
-        Err(_) => return Err("failed to get the code sample".into()),
-    };
-
-    Ok((instruction, solution_field_lines, tests_field_lines))
 }
 
 // yet a another utils func
