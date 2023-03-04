@@ -43,7 +43,7 @@ sudo apt install chromium-browser
 
 - message to user (e.g: "download successfully", "failed: reason"...)
 - detailed view of kata with the use of the API
-- store the latest download path locally for future uses (setting page + editor terminal command)
+- `DONE` <s>store the latest download path locally for future uses (setting page + editor terminal command)</s>
 - `DONE` <s>search kata by id</s>
 - `DONE` <s>fix rust bug when init cargo (output on screen)</s>
 - `DONE` <s>dynamic text input with cursor</s>

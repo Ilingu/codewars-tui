@@ -265,7 +265,7 @@ pub struct SettingsDatas {
 impl SettingsDatas {
     pub fn default() -> Self {
         Self {
-            editor_command: "codium".to_string(),
+            editor_command: "code".to_string(),
             download_path: String::new(),
         }
     }

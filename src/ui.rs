@@ -12,7 +12,7 @@ use crate::{
         CodewarsCLI, CursorDirection, DownloadModalInput, InputMode, KataAPI, DIFFICULTY, LANGAGE,
         SORT_BY, TAGS,
     },
-    utils::{gen_rand_colors, log_print, rank_color},
+    utils::{gen_rand_colors, rank_color},
     TERMINAL_REF_SIZE,
 };
 
@@ -571,19 +571,17 @@ fn draw_kata(kata: &KataAPI, is_active: bool) -> Paragraph<'static> {
 fn draw_download_modal<B: Backend>(f: &mut Frame<B>, state: &mut CodewarsCLI, area: Rect) {
     const ITEM_IN_VIEW: u16 = 18;
     let compute_percent = |no_items: usize| -> u16 {
+        ((((no_items as f64 - 1.0) * 10.0) / 3.0) + 10.0).ceil() as u16
+
         // why all these fancy number? Just used regression to find a mathematical law
-
         // -> affine way
-        (((no_items as f64) + 1.80519480519481) / 0.298961038961039).round() as u16
-
+        // (((no_items as f64) + 1.80519480519481) / 0.298961038961039).ceil() as u16
         // -> polynomial way, much more precise on the right interval (from 0% to 65%)
         // let a: f64 = 0.00145854145854146;
         // let b: f64 = 0.1993006993007;
         // let c: f64 = -0.72527472527431 - no_items as f64;
         // let delta = b.powi(2) - 4.0 * a * c;
-
-        // let result = ((-b + delta.sqrt()) / (2.0 * a)).round() as u16;
-        // return result;
+        // ((-b + delta.sqrt()) / (2.0 * a)).round() as u16
     };
 
     let chunks = Layout::default()

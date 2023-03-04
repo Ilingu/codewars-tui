@@ -191,7 +191,7 @@ impl CodewarsCLI {
 
     pub fn run_postinstall(mut editor: &str, path: &str) -> Result<(), String> {
         if editor.len() <= 0 {
-            editor = "codium"
+            editor = "code"
         }
 
         match Command::new(editor).arg(path).output() {
@@ -324,7 +324,7 @@ impl Settings {
             .create(true)
             .read(read)
             .write(write)
-            .open(settings_file_path)?;
+            .open(Path::new(&settings_file_path))?;
 
         return Ok(file);
     }
@@ -337,7 +337,7 @@ impl Settings {
     }
 
     pub fn fetch_and_cache(&mut self) -> Result<SettingsDatas, Box<dyn Error>> {
-        let mut file = Self::get_file(true, false)?;
+        let mut file = Self::get_file(true, true)?;
 
         let mut file_content = String::new();
         file.read_to_string(&mut file_content)?;
@@ -420,7 +420,7 @@ impl KataAPI {
         let language_ext = language_to_extension(language).unwrap_or_default();
         let code_filename = format!("{download_path}/{}solution{}", preinstall, language_ext);
         let tests_filename = format!("{download_path}/{}tests{}", preinstall, language_ext);
-        let instruction_filename = format!("{download_path}/instruction.md");
+        let instruction_filename = format!("{download_path}/README.md");
 
         if let Err(why) = write_file(code_filename, sample_code_lines.join("\n")) {
             return Err(why.to_string());
@@ -674,6 +674,14 @@ pub async fn run_app<B: Backend>(
                                         }
                                         state.autocomplete_path();
                                     }
+                                    if state.editor_field.value == String::new() {
+                                        match state.settings.value() {
+                                            Ok(SettingsDatas { editor_command, .. }) => {
+                                                state.editor_field.push_str(&editor_command)
+                                            }
+                                            Err(_) => state.editor_field.push_str("code"),
+                                        }
+                                    }
 
                                     state.download_langage = (
                                         false,
@@ -743,7 +751,7 @@ pub async fn run_app<B: Backend>(
                                     state.download_path.move_cursor(CursorDirection::RIGHT)
                                 }
                                 KeyCode::Tab | KeyCode::Down => {
-                                    state.download_modal.0 = DownloadModalInput::Submit
+                                    state.download_modal.0 = DownloadModalInput::Editor
                                 }
                                 KeyCode::BackTab | KeyCode::Up => {
                                     state.download_modal.0 = DownloadModalInput::Langage
@@ -787,7 +795,7 @@ pub async fn run_app<B: Backend>(
                             },
                             DownloadModalInput::Submit => match key.code {
                                 KeyCode::BackTab | KeyCode::Up => {
-                                    state.download_modal.0 = DownloadModalInput::Path
+                                    state.download_modal.0 = DownloadModalInput::Editor
                                 }
                                 KeyCode::Enter => {
                                     let kata_to_download =
@@ -797,17 +805,12 @@ pub async fn run_app<B: Backend>(
                                         [state.download_langage.1.state]
                                         .0;
 
-                                    let editor = state
-                                        .settings
-                                        .value()
-                                        .unwrap_or(SettingsDatas {
-                                            editor_command: "codium".to_string(),
-                                            download_path: String::new(),
-                                        })
-                                        .editor_command;
-
                                     let download_result = kata_to_download
-                                        .download(language, &state.download_path.value, &editor)
+                                        .download(
+                                            language,
+                                            &state.download_path.value,
+                                            &state.editor_field.value,
+                                        )
                                         .await;
                                     match download_result {
                                         Ok(_) => {
@@ -818,7 +821,7 @@ pub async fn run_app<B: Backend>(
 
                                             // update store
                                             if let Err(_) = state.settings.set(&SettingsDatas {
-                                                editor_command: editor,
+                                                editor_command: state.editor_field.value.to_owned(),
                                                 download_path: state.download_path.value.to_owned(),
                                             }) {}
                                             // TODO: ok message to user
