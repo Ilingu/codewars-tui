@@ -380,7 +380,6 @@ impl KataAPI {
                 url: String::new(),
             },
             publishedAt: String::new(),
-            approvedAt: String::new(),
             totalCompleted: 0,
             totalAttempts: 0,
             totalStars: 0,

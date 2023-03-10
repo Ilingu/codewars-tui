@@ -286,7 +286,6 @@ pub struct KataAPI {
     pub rank: APIRank,
     pub createdBy: APIAuthor,
     pub publishedAt: String,
-    pub approvedAt: String,
     pub totalCompleted: usize,
     pub totalAttempts: usize,
     pub totalStars: usize,
